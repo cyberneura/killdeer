@@ -1,0 +1,52 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer || true
+
+      - name: Build Killdeer CLI
+        run: swift build -c release --target killdeer
+
+      - name: Build Killdeer App
+        run: swift build -c release --target killdeer-app
+
+      - name: Package binaries
+        run: |
+          mkdir -p dist
+          cp .build/release/killdeer dist/killdeer
+          cp .build/release/killdeer-app dist/killdeer-app
+          cp README.md dist/
+          cd dist
+          zip -r killdeer-macos.zip killdeer killdeer-app README.md
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: killdeer-macos
+          path: dist/killdeer-macos.zip
+
+      - name: Create Release
+        id: create_release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG_NAME="v$(date +'%Y%m%d.%H%M%S')"
+          gh release create "$TAG_NAME" \
+            dist/killdeer-macos.zip \
+            --title "Killdeer $TAG_NAME" \
+            --notes "Automated build from commit ${{ github.sha }}"
