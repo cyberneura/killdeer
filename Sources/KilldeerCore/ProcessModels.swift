@@ -40,6 +40,20 @@ public struct ProcessFinding: Sendable {
     public let reasons: [String]
 
     public var isRunaway: Bool { score >= 50 }
+
+    public init(
+        process: ProcessSnapshot,
+        cpuPercent: Double,
+        isOrphanChromeHelper: Bool,
+        score: Int,
+        reasons: [String]
+    ) {
+        self.process = process
+        self.cpuPercent = cpuPercent
+        self.isOrphanChromeHelper = isOrphanChromeHelper
+        self.score = score
+        self.reasons = reasons
+    }
 }
 
 public struct DetectionConfiguration: Sendable {

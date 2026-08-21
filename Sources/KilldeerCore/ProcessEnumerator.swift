@@ -13,10 +13,10 @@ public struct ProcessEnumerator: Sendable {
             }
         )
 
-        return processes.compactMap { entry in
+        return processes.compactMap { entry -> ProcessSnapshot? in
             let pid = entry.kp_proc.p_pid
             guard pid > 0, let details = details(for: pid) else { return nil }
-            let name = appNames[pid] ?? processName(pid: pid) ?? details.arguments.first.map(URL.init(fileURLWithPath:).lastPathComponent) ?? "(unknown)"
+            let name = appNames[pid] ?? processName(pid: pid) ?? details.arguments.first.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "(unknown)"
             return ProcessSnapshot(
                 identity: ProcessIdentity(pid: pid, startTime: details.startTime),
                 parentPID: entry.kp_eproc.e_ppid,
@@ -92,12 +92,12 @@ public struct ProcessEnumerator: Sendable {
         while index < data.count, data[index] != 0 { index += 1 } // executable path
         while index < data.count, data[index] == 0 { index += 1 }
 
-        var result: [String] = []
-        while index < data.count, result.count < Int(argc) {
+        var args: [String] = []
+        while index < data.count, args.count < Int(argc) {
             let end = data[index...].firstIndex(of: 0) ?? data.endIndex
-            if end > index, let value = String(bytes: data[index..<end], encoding: .utf8) { result.append(value) }
+            if end > index, let value = String(bytes: data[index..<end], encoding: .utf8) { args.append(value) }
             index = end == data.endIndex ? end : end + 1
         }
-        return result
+        return args
     }
 }
