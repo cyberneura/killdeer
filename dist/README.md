@@ -2,14 +2,6 @@
 
 Killdeer is a macOS 14+ command-line MVP for finding CPU-heavy processes and disconnected Google Chrome helpers. Its monitoring and termination logic lives in the reusable `KilldeerCore` Swift package library, ready for a later `MenuBarExtra` app.
 
-## Installation
-
-```sh
-brew install cyberneura/tap/killdeer
-```
-
-Or build from source (see below).
-
 ## Build
 
 ```sh
@@ -17,6 +9,14 @@ swift build -c release
 ```
 
 The executable is written to `.build/release/killdeer`. Killdeer uses only Apple frameworks (`Foundation`, `AppKit`, and Darwin/libproc) and needs no special permission to inspect or signal processes owned by the same user.
+
+## Installation
+
+```sh
+brew install cyberneura/tap/killdeer
+```
+
+Or build from source (see below).
 
 ## Usage
 
