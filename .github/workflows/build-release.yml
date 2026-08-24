@@ -65,7 +65,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          IFS=. read -r major minor patch < VERSION
+          VERSION=$(cat VERSION)
+          IFS=. read -r major minor patch <<< "$VERSION"
           NEW_VERSION="${major}.${minor}.$((patch + 1))"
           echo "$NEW_VERSION" > VERSION
           git config user.name "Casper (bot)"
