@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:killdeer}",
+            "name": "Debug killdeer",
+            "target": "killdeer",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug killdeer"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:killdeer}",
+            "name": "Release killdeer",
+            "target": "killdeer",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release killdeer"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:killdeer}",
+            "name": "Debug killdeer-app",
+            "target": "killdeer-app",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug killdeer-app"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:killdeer}",
+            "name": "Release killdeer-app",
+            "target": "killdeer-app",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release killdeer-app"
+        }
+    ]
+}
