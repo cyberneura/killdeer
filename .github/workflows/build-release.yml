@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # PR でもテストを走らせ、マージ前に落とす。リリース作成は下の
+  # `github.ref == 'refs/heads/main'` で従来どおり main に限られる。
+  pull_request:
 
 permissions:
   contents: write
@@ -17,6 +20,14 @@ jobs:
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer || true
+
+      # リリースの門番。main への push でここから gh release create まで一気に
+      # 走るので、テストが無いと壊れたバイナリがそのまま配布物になる。
+      # KilldeerCoreTests は ProcessDetector の判定ロジック (暴走判定・
+      # 孤児 Chrome Helper 判定) を見ており、ここが狂うと無関係なプロセスを
+      # 落としかねない。
+      - name: Test
+        run: swift test
 
       - name: Build Killdeer CLI
         run: swift build -c release --product killdeer
