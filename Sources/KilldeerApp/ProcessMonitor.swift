@@ -10,13 +10,30 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var isScanning = false
     @Published private(set) var isWorking = false
     @Published private(set) var lastError: String?
+    @Published private(set) var cpuPercent: Double?
+    @Published private(set) var temperatureCelsius: Double?
 
     private let detector = ProcessDetector()
+    private let temperatureReader = TemperatureReader()
+    private var previousCPUTicks: CPUTicks?
     private let pollingInterval: TimeInterval
     private var pollingTask: Task<Void, Never>?
     private var knownRunawayPIDs: Set<pid_t> = []
 
     var hasRunaways: Bool { !findings.isEmpty }
+
+    /// The system line under the status.
+    ///
+    /// A machine with no readable sensors still shows its CPU figure here, so
+    /// the only time this is empty is the first poll, before there are two tick
+    /// samples to subtract, on a machine that also has no sensors. The menu
+    /// drops the row then rather than showing a pair of dashes.
+    var systemText: String {
+        var parts: [String] = []
+        if let cpuPercent { parts.append(String(format: "CPU %.1f%%", cpuPercent)) }
+        if let temperatureCelsius { parts.append(String(format: "%.1f °C", temperatureCelsius)) }
+        return parts.joined(separator: "    ")
+    }
 
     var statusText: String {
         if isScanning { return "Scanning…" }
@@ -31,11 +48,16 @@ final class ProcessMonitor: ObservableObject {
         requestNotificationPermission()
         pollingTask = Task { [weak self] in
             guard let self else { return }
+            await self.refreshSystemStats()
             await self.scan()
             while !Task.isCancelled {
                 let delay = UInt64(self.pollingInterval * 1_000_000_000)
                 try? await Task.sleep(nanoseconds: delay)
                 guard !Task.isCancelled else { break }
+                // Ahead of scan, and outside it: scan returns early while a
+                // termination is in flight, and the figures should keep moving
+                // through exactly that.
+                await self.refreshSystemStats()
                 await self.scan()
             }
         }
@@ -78,6 +100,41 @@ final class ProcessMonitor: ObservableObject {
             }
             isWorking = false
         }
+    }
+
+    func openActivityMonitor() {
+        // Resolved by bundle identifier rather than by path. The path has moved
+        // between macOS versions, and Launch Services knows where it is now.
+        guard let url = NSWorkspace.shared
+            .urlForApplication(withBundleIdentifier: "com.apple.ActivityMonitor")
+        else {
+            lastError = "Activity Monitor could not be found"
+            return
+        }
+        // The launch itself fails asynchronously. Without the handler a press
+        // that goes nowhere looks exactly like one that worked.
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) {
+            [weak self] _, error in
+            guard let error else { return }
+            Task { @MainActor in self?.lastError = error.localizedDescription }
+        }
+    }
+
+    private func refreshSystemStats() async {
+        let reader = temperatureReader
+        let sample = await Task.detached {
+            (ticks: CPULoad.sample(), readings: reader.readings())
+        }.value
+
+        if let ticks = sample.ticks {
+            // The first sample has nothing to subtract from, so the percentage
+            // appears one poll later rather than reading 0% at launch.
+            if let previous = previousCPUTicks {
+                cpuPercent = CPULoad.percentage(from: previous, to: ticks)
+            }
+            previousCPUTicks = ticks
+        }
+        temperatureCelsius = TemperatureSelection.representative(from: sample.readings)
     }
 
     func showSettingsPlaceholder() {
