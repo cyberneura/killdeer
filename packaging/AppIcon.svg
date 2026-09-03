@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The master the .icns is generated from. scripts/make-icon.sh renders it to
+  packaging/AppIcon.png, and scripts/make-app.sh sips that png into every icns
+  slot. The master is 1024, so the 512x512@2x slot is a straight copy of it and
+  every other slot is a downscale.
+
+  Original artwork: a plover at rest, bill to the right, fan tail to the left.
+  Nothing here is traced from an icon set or a system symbol, so the app carries
+  no attribution obligation and no icon set's licence.
+
+  Solid rather than line work. Every slot below 512 is a downscale of this one
+  master, and a stroke thin enough to look right at 512 disappears at 32.
+
+  The parts are separate shapes rather than one outline. They are all the same
+  white and they overlap, so the fill unions them; the joins that used to show
+  as steps came from shapes that did not actually overlap, not from the
+  technique.
+
+  The glyph's own bounding box runs 122..401 across and 164..378 down, which is
+  neither centred nor square. The translate is what centres it in the badge;
+  centring the body alone would hang the bill and tail off one side.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="50" y="50" width="412" height="412" rx="96" fill="#222831"/>
+  <g transform="translate(256,256) scale(0.88) translate(-256,-256)">
+    <g transform="translate(-5.5,-15)">
+      <g fill="#ffffff">
+        <path d="M 180.6,309.9 Q 138.4,309.3 122.1,245.3 Q 169.8,199.7 205.9,221.5 Z"/>
+        <ellipse cx="250" cy="282" rx="82" ry="70"/>
+        <circle cx="308" cy="208" r="44"/>
+        <polygon points="339.5,179.3 401.1,184.8 349.2,218.5"/>
+        <rect x="221" y="334" width="12" height="44" rx="6"/>
+        <rect x="267" y="334" width="12" height="44" rx="6"/>
+      </g>
+      <circle cx="317" cy="192" r="8.5" fill="#222831"/>
+    </g>
+  </g>
+</svg>
