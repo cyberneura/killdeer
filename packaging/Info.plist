@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Info.plist for the built app. scripts/make-app.sh copies this in with
+  __VERSION__ replaced by the contents of VERSION.
+
+  A SwiftPM executable has no Info.plist of its own, so everything macOS reads
+  about the app comes from here: its identity, its icon, and the LSUIElement
+  that keeps a menu bar app out of the Dock and the app switcher.
+
+  Sources/KilldeerApp/Info.plist is a different file for a different job. That
+  one is linked into the bare executable so that `swift run killdeer-app` still
+  behaves like an agent; this one is what a user's Mac reads.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Killdeer</string>
+	<key>CFBundleDisplayName</key>
+	<string>Killdeer</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.cyberneura.killdeer</string>
+	<key>CFBundleExecutable</key>
+	<string>killdeer-app</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__VERSION__</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<!--
+	  No Dock icon and no app switcher entry: the menu bar item is the whole
+	  interface. SMAppService.mainApp also relies on this, since a login item
+	  that opened a window on every login would be a different app.
+	-->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>

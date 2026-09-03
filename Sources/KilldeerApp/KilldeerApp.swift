@@ -4,14 +4,24 @@ import SwiftUI
 @main
 struct KilldeerApp: App {
     @StateObject private var monitor = ProcessMonitor()
+    @StateObject private var loginItem = LoginItemController()
+
+    // Built once. The label is rebuilt on every published change from the
+    // monitor, and rasterising the glyph each time would redraw it several
+    // times a minute for an image that never changes.
+    private static let restingIcon = KilldeerBird.menuBarImage(tint: nil)
+    private static let warningIcon = KilldeerBird.menuBarImage(tint: .systemRed)
 
     var body: some Scene {
         MenuBarExtra {
-            KilldeerMenu(monitor: monitor)
+            KilldeerMenu(monitor: monitor, loginItem: loginItem)
         } label: {
-            Image(systemName: monitor.hasRunaways ? "exclamationmark.triangle.fill" : "bird.fill")
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(monitor.hasRunaways ? Color.red : Color.primary)
+            // Colour is the whole signal, as DESIGN.md asks for: the bird stays
+            // the bird and turns red. Swapping in a warning triangle would put
+            // a second, unrelated shape in the menu bar for the state that
+            // matters most, which is the worst moment to make someone re-read
+            // the icon.
+            Image(nsImage: monitor.hasRunaways ? Self.warningIcon : Self.restingIcon)
                 .accessibilityLabel(monitor.hasRunaways ? "Killdeer warning" : "Killdeer")
         }
         .menuBarExtraStyle(.menu)
@@ -20,6 +30,7 @@ struct KilldeerApp: App {
 
 private struct KilldeerMenu: View {
     @ObservedObject var monitor: ProcessMonitor
+    @ObservedObject var loginItem: LoginItemController
 
     var body: some View {
         Text(monitor.statusText)
@@ -57,6 +68,27 @@ private struct KilldeerMenu: View {
         .disabled(monitor.isWorking)
 
         Divider()
+
+        if loginItem.isAvailable {
+            Toggle("Start at Login", isOn: Binding(
+                get: { loginItem.isEnabled },
+                set: { loginItem.setEnabled($0) }
+            ))
+
+            // Registering an app the user has previously denied does not fail;
+            // it leaves the service waiting for approval that can only be given
+            // in System Settings. Without this the toggle would simply refuse
+            // to stay on, with nothing said about why.
+            if loginItem.status == .requiresApproval {
+                Button("Approve in System Settings…") {
+                    loginItem.openSystemSettings()
+                }
+            }
+
+            if let error = loginItem.lastError {
+                Text("Start at Login failed: \(error)")
+            }
+        }
 
         Button("Settings…") {
             monitor.showSettingsPlaceholder()

@@ -1,26 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Linked into the bare executable (see linkerSettings in Package.swift) so that
+  `swift run killdeer-app` still comes up as an agent instead of a Dock app.
+  Development only.
+
+  What a user's Mac reads is packaging/Info.plist, the one make-app.sh puts in
+  Killdeer.app. This file deliberately carries no version: two plists both
+  claiming a version is two places to bump, and the one nobody remembers to
+  bump is this one.
+-->
 <plist version="1.0">
 <dict>
-    <key>CFBundleDisplayName</key>
-    <string>Killdeer</string>
-    <key>CFBundleExecutable</key>
-    <string>killdeer-app</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.cyberneura.killdeer</string>
-    <key>CFBundleName</key>
-    <string>Killdeer</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.2.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
+	<key>CFBundleName</key>
+	<string>Killdeer</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.cyberneura.killdeer</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
 </dict>
 </plist>
