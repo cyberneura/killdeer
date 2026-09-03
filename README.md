@@ -16,6 +16,8 @@ Or build from source (see below).
 
 Open Killdeer from Spotlight or Launchpad. It has no Dock icon and no window; the bird in the menu bar is the whole interface, and it turns red when something is running away.
 
+The menu carries the system's CPU use and a temperature, the scan and cleanup actions, and a way into Activity Monitor when you want more than Killdeer shows. The temperature is the hottest of the SoC die sensors, or, on a machine that exposes none, the hottest sensor it does offer — which may be the SSD or the battery rather than the chip. It comes from the HID sensors macOS publishes without any special permission; that is not a public interface, so hardware offering nothing readable drops the temperature and leaves the CPU figure in place.
+
 **Start at Login** in that menu registers the app with macOS through `SMAppService`. The registration belongs to the system rather than to Killdeer, so it can also be revoked in System Settings > General > Login Items; the menu reads the state back from macOS and follows it.
 
 ## Build
@@ -30,7 +32,7 @@ scripts/make-dmg.sh             # dist/Killdeer_<version>_universal.dmg
 
 `scripts/make-icon.sh` re-renders `packaging/AppIcon.png` from `packaging/AppIcon.svg` and needs `librsvg`. Run it when the icon changes and commit the png.
 
-Killdeer uses only Apple frameworks (`Foundation`, `AppKit`, `SwiftUI`, `ServiceManagement`, and Darwin/libproc) and needs no special permission to inspect or signal processes owned by the same user.
+Killdeer uses only Apple frameworks (`Foundation`, `AppKit`, `SwiftUI`, `ServiceManagement`, `IOKit`, and Darwin/libproc) and needs no special permission to inspect or signal processes owned by the same user.
 
 ## Releasing
 

@@ -35,6 +35,10 @@ private struct KilldeerMenu: View {
     var body: some View {
         Text(monitor.statusText)
 
+        if !monitor.systemText.isEmpty {
+            Text(monitor.systemText)
+        }
+
         Button("Scan Now") {
             monitor.scanNow()
         }
@@ -88,6 +92,10 @@ private struct KilldeerMenu: View {
             if let error = loginItem.lastError {
                 Text("Start at Login failed: \(error)")
             }
+        }
+
+        Button("Activity Monitor") {
+            monitor.openActivityMonitor()
         }
 
         Button("Settings…") {
