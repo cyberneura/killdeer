@@ -45,13 +45,15 @@ public struct ChromeInstance: Sendable {
     /// answered, and this is the situation the command exists to surface rather
     /// than paper over.
     public let sharesDebugPort: Bool
-    /// Whether the browser process actually holds the port. A switch is a
-    /// request; the bind can have failed, leaving something else answering
-    /// there.
-    public let isListeningOnDebugPort: Bool
+    /// The socket the browser actually holds for its debugging port, or nil if
+    /// it holds none. A switch is a request; the bind can have failed, leaving
+    /// something else answering there.
+    public let debugListener: ChromeListener?
 
-    /// Only then does an answer on that port belong to this instance.
-    public var ownsDebugEndpoint: Bool { isListeningOnDebugPort && !sharesDebugPort }
+    public var isListeningOnDebugPort: Bool { debugListener != nil }
+
+    /// The socket to ask, and only when the answer would be this instance's.
+    public var probeTarget: ChromeListener? { sharesDebugPort ? nil : debugListener }
     public let automationFlags: [String]
     /// The process that launched the browser, when it is something other than
     /// the window server: a terminal, chromedriver, node, python.
@@ -70,7 +72,7 @@ public struct ChromeInstance: Sendable {
             kind: kind, browser: browser, helpers: helpers,
             userDataDirectory: userDataDirectory, profileDirectory: profileDirectory, profile: profile,
             isHeadless: isHeadless, remoteDebugging: remoteDebugging, remoteDebuggingPort: remoteDebuggingPort,
-            sharesDebugPort: true, isListeningOnDebugPort: isListeningOnDebugPort,
+            sharesDebugPort: true, debugListener: debugListener,
             automationFlags: automationFlags, launchedBy: launchedBy
         )
     }
@@ -97,16 +99,23 @@ public struct ChromeInstance: Sendable {
 public struct ChromeInspector: Sendable {
     private let catalog: ChromeProfileCatalog
     private let fileContents: @Sendable (String) -> String?
-    private let listeningPorts: @Sendable (pid_t) -> Set<Int>
+    private let listeners: @Sendable (pid_t) -> Set<ChromeListener>
 
     public init(
         catalog: ChromeProfileCatalog = .init(),
-        listeningPorts: @escaping @Sendable (pid_t) -> Set<Int> = { ListeningPorts()(pid: $0) },
+        listeners: @escaping @Sendable (pid_t) -> Set<ChromeListener> = { ListeningSockets()(pid: $0) },
         fileContents: @escaping @Sendable (String) -> String? = { try? String(contentsOfFile: $0, encoding: .utf8) }
     ) {
         self.catalog = catalog
-        self.listeningPorts = listeningPorts
+        self.listeners = listeners
         self.fileContents = fileContents
+    }
+
+    /// IPv4 first when the browser holds both, so the probe goes where a
+    /// client using `127.0.0.1` would.
+    private static func listener(for port: Int, among listeners: Set<ChromeListener>) -> ChromeListener? {
+        let held = listeners.filter { $0.port == port }
+        return held.first { !$0.isIPv6 } ?? held.first
     }
 
     private func resolvedPort(for debugging: ChromeRemoteDebugging?, userDataDirectory: String?) -> Int? {
@@ -206,7 +215,7 @@ public struct ChromeInspector: Sendable {
                 remoteDebugging: nil,
                 remoteDebuggingPort: nil,
                 sharesDebugPort: false,
-                isListeningOnDebugPort: false,
+                debugListener: nil,
                 automationFlags: [],
                 launchedBy: nil
             )
@@ -306,7 +315,7 @@ public struct ChromeInspector: Sendable {
             remoteDebugging: commandLine.remoteDebugging,
             remoteDebuggingPort: port,
             sharesDebugPort: false,
-            isListeningOnDebugPort: port.map { listeningPorts(browser.identity.pid).contains($0) } ?? false,
+            debugListener: port.flatMap { Self.listener(for: $0, among: listeners(browser.identity.pid)) },
             automationFlags: commandLine.automationFlags,
             launchedBy: Self.launcher(of: browser, byPID: byPID)
         )

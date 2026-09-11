@@ -95,7 +95,7 @@ extension ChromeReport {
     ///   nil means "not checked", not "unreachable".
     public init(
         instances: [ChromeInstance],
-        probes: [Int: ChromeDebugTarget?] = [:],
+        probes: [ChromeListener: ChromeDebugTarget?] = [:],
         generatedAt: Date = Date()
     ) {
         self.generatedAt = generatedAt
@@ -104,7 +104,7 @@ extension ChromeReport {
             // Left unchecked unless this browser holds the port outright.
             // Something may answer on it, but saying it was this instance when
             // the bind failed or another holds it too would be a guess.
-            let probe = instance.ownsDebugEndpoint ? port.flatMap { probes[$0] } : nil
+            let probe = instance.probeTarget.flatMap { probes[$0] }
             return Instance(
                 browser: instance.displayName,
                 browserKind: instance.kind?.rawValue,

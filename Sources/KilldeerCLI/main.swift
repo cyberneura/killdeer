@@ -91,7 +91,7 @@ private func renderChrome(_ instances: [ChromeInstance], showHelpers: Bool, prob
             var line = "  debugging      port \(resolved.map(String.init) ?? "unresolved")"
             // An answer on the port is only this browser's if this browser is
             // the one holding it and no other instance is holding it too.
-            let target = probe && instance.ownsDebugEndpoint ? resolved.flatMap { prober.probe(port: $0) } : nil
+            let target = probe ? instance.probeTarget.flatMap { prober.probe($0) } : nil
             if resolved == nil {
                 // Nothing to check the browser against.
             } else if instance.sharesDebugPort {
@@ -133,9 +133,9 @@ private func renderChrome(_ instances: [ChromeInstance], showHelpers: Bool, prob
 
 private func chromeJSON(_ instances: [ChromeInstance], probe: Bool) throws -> String {
     let prober = ChromeDebugProbe()
-    var probes: [Int: ChromeDebugTarget?] = [:]
+    var probes: [ChromeListener: ChromeDebugTarget?] = [:]
     if probe {
-        for port in instances.compactMap(\.remoteDebuggingPort) { probes[port] = prober.probe(port: port) }
+        for target in instances.compactMap(\.probeTarget) { probes[target] = prober.probe(target) }
     }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

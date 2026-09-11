@@ -28,8 +28,12 @@ public struct ChromeDebugProbe: Sendable {
         session = URLSession(configuration: configuration)
     }
 
-    public func probe(port: Int) -> ChromeDebugTarget? {
-        guard let url = URL(string: "http://127.0.0.1:\(port)/json/version") else { return nil }
+    /// Asks the socket the browser holds, not merely its port number. With
+    /// another process on the same port in the other address family, asking by
+    /// number reaches whichever one that host resolves to.
+    public func probe(_ listener: ChromeListener) -> ChromeDebugTarget? {
+        let port = listener.port
+        guard let url = URL(string: "http://\(listener.probeHost):\(port)/json/version") else { return nil }
         var request = URLRequest(url: url)
         request.timeoutInterval = timeout
 

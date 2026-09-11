@@ -87,10 +87,17 @@ reported with the port it settled on, read back from `DevToolsActivePort`.
 `--probe` goes one step further and asks the endpoint for its version, which is
 the difference between a port that was requested and one that is listening.
 
-Two browsers given the same port are both marked as contesting it, and neither
-is probed. They both end up listening, one on IPv4 and one on IPv6, so which one
-a client reaches depends on how that client resolves localhost. Naming either as
-the one answering would be the guess this command exists to avoid.
+A port is only reported as a browser's once that browser is found holding it.
+The switch is a request: the bind can fail, and something else can be there,
+including an Electron app started with its own debugging port, which this
+command does not list. Probes go to the socket the browser holds, address family
+included, because with another process on `127.0.0.1:9222` a browser still binds
+`[::1]:9222` and asking by port number alone reaches the wrong one.
+
+Two browsers both holding the same port are marked as contesting it, and neither
+is probed. They end up one per address family, so which one a client reaches
+depends on how that client resolves localhost. Naming either as the one
+answering would be the guess this command exists to avoid.
 
 Identification is by the `.app` bundle in the path the kernel recorded as
 executed, not `argv[0]`, which is only what the parent chose to pass. Electron
