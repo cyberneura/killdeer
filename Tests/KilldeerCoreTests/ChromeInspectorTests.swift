@@ -333,6 +333,27 @@ final class ChromeInspectorTests: XCTestCase {
         XCTAssertEqual(ChromeInspector(catalog: catalog).instances(from: [browser]).first?.profileDirectory, "Default")
     }
 
+    /// Chrome resolves a relative `--user-data-dir` against its own working
+    /// directory, which another process cannot read. Reading it here would
+    /// resolve it against Killdeer's and report whatever sits at that path.
+    func testARelativeUserDataDirIsShownButNotReadFrom() {
+        for directory in ["./agent-profile", "~/chrome-profile"] {
+            let browser = finding(pid: 100, parent: 1, name: "Google Chrome", args: [
+                chromePath, "--user-data-dir=\(directory)", "--remote-debugging-port=0"
+            ])
+            var reads: [String] = []
+            let inspector = ChromeInspector(catalog: catalog()) { path in
+                reads.append(path)
+                return "50618"
+            }
+            let instance = inspector.instances(from: [browser]).first
+            XCTAssertEqual(instance?.userDataDirectory, directory)
+            XCTAssertNil(instance?.profile)
+            XCTAssertNil(instance?.remoteDebuggingPort)
+            XCTAssertEqual(reads, [], "nothing should be read from a path Killdeer cannot resolve")
+        }
+    }
+
     func testHelperWithNoSurvivingBrowserIsReportedAsOrphaned() {
         let orphan = finding(pid: 300, parent: 999, name: "Google Chrome Helper (Renderer)", args: [helperPath, "--type=renderer"])
         let instances = ChromeInspector(catalog: catalog()).instances(from: [orphan])

@@ -85,10 +85,22 @@ public struct ChromeInspector: Sendable {
     private func resolvedPort(for debugging: ChromeRemoteDebugging?, userDataDirectory: String?) -> Int? {
         guard case let .port(port) = debugging else { return nil }
         guard port == 0 else { return port }
-        guard let userDataDirectory,
-              let first = fileContents(userDataDirectory + "/DevToolsActivePort")?.split(separator: "\n").first
+        guard let directory = Self.readableDirectory(userDataDirectory),
+              let first = fileContents(directory + "/DevToolsActivePort")?.split(separator: "\n").first
         else { return nil }
         return Int(first)
+    }
+
+    /// A directory is only read when the browser was given an absolute one.
+    ///
+    /// Chrome resolves a relative `--user-data-dir` against its own working
+    /// directory, which is not readable for another process without a private
+    /// API. Reading it here would resolve it against Killdeer's instead and
+    /// report whatever happens to sit at that path, so the switch is still
+    /// shown as given but nothing is read from it.
+    private static func readableDirectory(_ path: String?) -> String? {
+        guard let path, path.hasPrefix("/") else { return nil }
+        return path
     }
 
     /// Samples the machine and groups the Chrome-family processes it finds.
@@ -235,8 +247,9 @@ public struct ChromeInspector: Sendable {
         let commandLine = browser.commandLine
         // Chromium reopens whatever profile it used last, so assuming "Default"
         // names the wrong one on any machine with more than one profile.
+        let readableDirectory = Self.readableDirectory(userDataDirectory)
         let profileDirectory = commandLine.profileDirectory
-            ?? catalog.lastUsedProfileDirectory(inUserDataDirectory: userDataDirectory)
+            ?? catalog.lastUsedProfileDirectory(inUserDataDirectory: readableDirectory)
             ?? (userDataDirectory == nil ? nil : "Default")
 
         return ChromeInstance(
@@ -245,7 +258,7 @@ public struct ChromeInspector: Sendable {
             helpers: helpers.sorted { $0.identity.pid < $1.identity.pid },
             userDataDirectory: userDataDirectory,
             profileDirectory: profileDirectory,
-            profile: catalog.profile(userDataDirectory: userDataDirectory, profileDirectory: profileDirectory),
+            profile: catalog.profile(userDataDirectory: readableDirectory, profileDirectory: profileDirectory),
             isHeadless: commandLine.isHeadless,
             remoteDebugging: commandLine.remoteDebugging,
             remoteDebuggingPort: resolvedPort(for: commandLine.remoteDebugging, userDataDirectory: userDataDirectory),
