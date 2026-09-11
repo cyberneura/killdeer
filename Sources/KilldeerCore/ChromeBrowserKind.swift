@@ -105,14 +105,15 @@ public enum ChromeBrowserKind: String, CaseIterable, Sendable {
     }
 
     public static func detect(executablePath: String) -> ChromeBrowserKind? {
-        // Whole path components, not a substring search: `Google Chrome.app`
-        // appears inside `Not Google Chrome.app` and `Google Chrome.app-backup`
-        // too, and matching those would offer to kill an unrelated program.
+        // The outermost bundle owns the process, so it alone decides. Looking
+        // past it for a matching one further in would report a process as
+        // Chrome because its owner happens to ship a copy of Chrome inside
+        // itself, and put a kill action next to it.
         //
-        // Walking from the root takes the outermost bundle, which is the
-        // browser. A helper's path nests its own `.app` inside the browser's.
-        for component in executablePath.split(separator: "/") where component.hasSuffix(".app") {
-            if let match = bundleNames.first(where: { $0.0 == component }) { return match.1 }
+        // Whole components, not a substring search: `Google Chrome.app` appears
+        // inside `Not Google Chrome.app` and `Google Chrome.app-backup` too.
+        if let bundle = executablePath.split(separator: "/").first(where: { $0.hasSuffix(".app") }) {
+            return bundleNames.first { $0.0 == bundle }?.1
         }
         // Puppeteer and Playwright download a bare `chrome-headless-shell` that
         // lives in a cache directory with no bundle around it.

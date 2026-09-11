@@ -126,6 +126,14 @@ final class ChromeBrowserKindTests: XCTestCase {
         XCTAssertEqual(ChromeBrowserKind.detect(executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), .chrome)
     }
 
+    /// The outermost bundle owns the process. An app that ships a copy of a
+    /// browser inside itself owns what it runs from that copy.
+    func testANestedBrowserBundleDoesNotClaimAnotherAppsProcess() {
+        XCTAssertNil(ChromeBrowserKind.detect(
+            executablePath: "/Applications/Foo.app/Contents/Resources/Google Chrome.app/Contents/MacOS/tool"
+        ))
+    }
+
     /// A helper nests its own `.app` inside the browser's, and it is the
     /// browser's that identifies which installation the process came from.
     func testTheOutermostBundleIdentifiesAHelper() {
