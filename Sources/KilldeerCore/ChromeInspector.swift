@@ -8,6 +8,14 @@ public struct ChromeProcess: Sendable {
     public var identity: ProcessIdentity { snapshot.identity }
     public var role: ChromeProcessRole { commandLine.role }
     public var kind: ChromeBrowserKind? { ChromeBrowserKind.detect(executablePath: commandLine.executablePath) }
+
+    /// Identified by its executable rather than by the `--database` switch it
+    /// normally carries. What it is does not depend on how it was invoked, and
+    /// one launched without that switch still needs placing rather than
+    /// dropping into the orphan bucket.
+    public var isCrashpadHandler: Bool {
+        URL(fileURLWithPath: commandLine.executablePath).lastPathComponent == "chrome_crashpad_handler"
+    }
     public var residentMemoryBytes: UInt64 { snapshot.residentMemoryBytes }
 }
 
@@ -128,15 +136,15 @@ public struct ChromeInspector: Sendable {
                 helpersByBrowser[owner.identity.pid, default: []].append(helper)
                 continue
             }
-            guard helper.commandLine.crashpadDatabase == nil else {
-                switch Self.crashpadOwner(of: helper, browsers: browsers, userDataDirectories: userDataDirectories) {
-                case let .browser(pid): helpersByBrowser[pid, default: []].append(helper)
-                case .ambiguous: break
-                case .none: orphansByKind[helper.kind, default: []].append(helper)
-                }
+            guard helper.isCrashpadHandler else {
+                orphansByKind[helper.kind, default: []].append(helper)
                 continue
             }
-            orphansByKind[helper.kind, default: []].append(helper)
+            switch Self.crashpadOwner(of: helper, browsers: browsers, userDataDirectories: userDataDirectories) {
+            case let .browser(pid): helpersByBrowser[pid, default: []].append(helper)
+            case .ambiguous: break
+            case .none: orphansByKind[helper.kind, default: []].append(helper)
+            }
         }
 
         let running = browsers.map { browser in

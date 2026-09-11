@@ -290,6 +290,17 @@ final class ChromeInspectorTests: XCTestCase {
         XCTAssertEqual(instances.first { $0.browser?.identity.pid == 100 }?.helpers.count, 0)
     }
 
+    /// The switch is how the handler is placed, not how it is recognised. One
+    /// without it still belongs to the browser it was launched from.
+    func testCrashpadHandlerWithoutADatabaseSwitchIsStillPlaced() {
+        let browser = finding(pid: 100, parent: 1, name: "Google Chrome", args: [chromePath])
+        let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [crashpadPath])
+        let instances = ChromeInspector(catalog: catalog()).instances(from: [browser, crashpad])
+        XCTAssertEqual(instances.count, 1)
+        XCTAssertFalse(instances[0].isOrphaned)
+        XCTAssertEqual(instances[0].helpers.map(\.identity.pid), [101])
+    }
+
     func testCrashpadHandlerOfAVanishedBrowserStaysOrphaned() {
         let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [
             crashpadPath, "--database=/tmp/gone/Crashpad"
