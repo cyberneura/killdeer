@@ -39,6 +39,12 @@ public struct ChromeInstance: Sendable {
     /// the choice into `DevToolsActivePort`; that is the case most worth
     /// reporting, and the switch alone would show it as 0.
     public let remoteDebuggingPort: Int?
+    /// Another running instance asks for the same port. Both can end up
+    /// listening on it, one per address family, so which one a client reaches
+    /// depends on how that client resolves localhost. Probing cannot say which
+    /// answered, and this is the situation the command exists to surface rather
+    /// than paper over.
+    public let sharesDebugPort: Bool
     public let automationFlags: [String]
     /// The process that launched the browser, when it is something other than
     /// the window server: a terminal, chromedriver, node, python.
@@ -50,6 +56,16 @@ public struct ChromeInstance: Sendable {
     public var id: String { browser.map { "pid:\($0.identity.pid)" } ?? "orphans:\(kind?.rawValue ?? "unknown")" }
 
     public var isOrphaned: Bool { browser == nil }
+
+    func sharingDebugPort(with contested: Set<Int>) -> ChromeInstance {
+        guard let port = remoteDebuggingPort, contested.contains(port) else { return self }
+        return ChromeInstance(
+            kind: kind, browser: browser, helpers: helpers,
+            userDataDirectory: userDataDirectory, profileDirectory: profileDirectory, profile: profile,
+            isHeadless: isHeadless, remoteDebugging: remoteDebugging, remoteDebuggingPort: remoteDebuggingPort,
+            sharesDebugPort: true, automationFlags: automationFlags, launchedBy: launchedBy
+        )
+    }
     public var allProcesses: [ChromeProcess] { (browser.map { [$0] } ?? []) + helpers }
     public var totalCPUPercent: Double { allProcesses.reduce(0) { $0 + $1.cpuPercent } }
     public var totalResidentMemoryBytes: UInt64 { allProcesses.reduce(0) { $0 &+ $1.residentMemoryBytes } }
@@ -178,14 +194,22 @@ public struct ChromeInspector: Sendable {
                 isHeadless: helpers.contains { $0.commandLine.isHeadless },
                 remoteDebugging: nil,
                 remoteDebuggingPort: nil,
+                sharesDebugPort: false,
                 automationFlags: [],
                 launchedBy: nil
             )
         }
 
+        let contestedPorts = Set(
+            running.compactMap(\.remoteDebuggingPort)
+                .reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
+                .filter { $0.value > 1 }
+                .keys
+        )
+
         // Orphans last: they are the anomaly, and pushing them to the bottom
         // keeps the browsers someone is actually using at a stable position.
-        return running.sorted { ($0.displayName, $0.browser?.identity.pid ?? 0) < ($1.displayName, $1.browser?.identity.pid ?? 0) }
+        return running.map { $0.sharingDebugPort(with: contestedPorts) }.sorted { ($0.displayName, $0.browser?.identity.pid ?? 0) < ($1.displayName, $1.browser?.identity.pid ?? 0) }
             + orphaned.sorted { $0.displayName < $1.displayName }
     }
 
@@ -262,6 +286,7 @@ public struct ChromeInspector: Sendable {
             isHeadless: commandLine.isHeadless,
             remoteDebugging: commandLine.remoteDebugging,
             remoteDebuggingPort: resolvedPort(for: commandLine.remoteDebugging, userDataDirectory: userDataDirectory),
+            sharesDebugPort: false,
             automationFlags: commandLine.automationFlags,
             launchedBy: Self.launcher(of: browser, byPID: byPID)
         )

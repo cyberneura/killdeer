@@ -89,8 +89,12 @@ private func renderChrome(_ instances: [ChromeInstance], showHelpers: Bool, prob
             // would read as "no port" when it is the opposite.
             let resolved = instance.remoteDebuggingPort
             var line = "  debugging      port \(resolved.map(String.init) ?? "unresolved")"
-            let target = probe ? resolved.flatMap { prober.probe(port: $0) } : nil
-            if probe, resolved != nil {
+            // Two browsers given the same port both end up listening, one per
+            // address family, so a probe cannot say which one answered.
+            let target = probe && !instance.sharesDebugPort ? resolved.flatMap { prober.probe(port: $0) } : nil
+            if instance.sharesDebugPort {
+                line += " — also claimed by another instance below"
+            } else if probe, resolved != nil {
                 line += target.map { " — reachable, \($0.browser)" } ?? " — not answering"
             }
             print(line)

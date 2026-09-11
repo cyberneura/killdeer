@@ -87,6 +87,11 @@ reported with the port it settled on, read back from `DevToolsActivePort`.
 `--probe` goes one step further and asks the endpoint for its version, which is
 the difference between a port that was requested and one that is listening.
 
+Two browsers given the same port are both marked as contesting it, and neither
+is probed. They both end up listening, one on IPv4 and one on IPv6, so which one
+a client reaches depends on how that client resolves localhost. Naming either as
+the one answering would be the guess this command exists to avoid.
+
 Identification is by the `.app` bundle in the path the kernel recorded as
 executed, not `argv[0]`, which is only what the parent chose to pass. Electron
 apps ship the same Chromium helpers, so matching on process name would list a

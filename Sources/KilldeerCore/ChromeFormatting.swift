@@ -34,7 +34,9 @@ extension ChromeInstance {
         var tags: [String] = []
         if isHeadless { tags.append("headless") }
         switch remoteDebugging {
-        case .port: tags.append(remoteDebuggingPort.map { "port \($0)" } ?? "port unresolved")
+        case .port:
+            let port = remoteDebuggingPort.map { "port \($0)" } ?? "port unresolved"
+            tags.append(sharesDebugPort ? port + ", contested" : port)
         case .pipe: tags.append("debug pipe")
         case nil: break
         }

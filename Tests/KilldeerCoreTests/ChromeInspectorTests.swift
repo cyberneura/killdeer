@@ -428,6 +428,31 @@ final class ChromeInspectorTests: XCTestCase {
         XCTAssertNil(ChromeInspector(catalog: catalog()).instances(from: [parent, browser]).first { $0.browser?.identity.pid == 901 }?.launchedBy)
     }
 
+    /// Both browsers end up listening, one per address family, so which one a
+    /// client reaches depends on how it resolves localhost. A probe answers,
+    /// but attributing that answer to either instance would be a guess.
+    func testTwoInstancesClaimingOnePortAreBothMarkedContested() throws {
+        let first = finding(pid: 100, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"])
+        let second = finding(pid: 200, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/b", "--remote-debugging-port=9222"])
+        let lone = finding(pid: 300, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/c", "--remote-debugging-port=9333"])
+        let instances = ChromeInspector(catalog: catalog()).instances(from: [first, second, lone])
+
+        XCTAssertEqual(instances.filter(\.sharesDebugPort).map { $0.browser?.identity.pid }, [100, 200])
+        XCTAssertTrue(instances.first { $0.browser?.identity.pid == 100 }?.tags.contains("port 9222, contested") == true)
+        XCTAssertFalse(instances.first { $0.browser?.identity.pid == 300 }?.sharesDebugPort == true)
+
+        let probed = ChromeReport(
+            instances: instances,
+            probes: [9222: ChromeDebugTarget(port: 9222, browser: "Chrome/1", webSocketDebuggerURL: "ws://x"),
+                     9333: ChromeDebugTarget(port: 9333, browser: "Chrome/1", webSocketDebuggerURL: "ws://y")]
+        )
+        let contested = try XCTUnwrap(probed.instances.first { $0.remoteDebuggingPort == 9222 })
+        XCTAssertTrue(contested.remoteDebuggingPortShared)
+        XCTAssertNil(contested.debugEndpointReachable, "a contested port must read as unchecked, not as this instance's")
+        XCTAssertNil(contested.webSocketDebuggerUrl)
+        XCTAssertEqual(probed.instances.first { $0.remoteDebuggingPort == 9333 }?.debugEndpointReachable, true)
+    }
+
     func testJSONReportKeepsOneShapeAcrossInstances() throws {
         let browser = finding(pid: 1000, parent: 1, name: "Google Chrome", args: [chromePath, "--remote-debugging-port=9222"])
         let orphan = finding(pid: 1001, parent: 999, name: "helper", args: [helperPath, "--type=renderer"])

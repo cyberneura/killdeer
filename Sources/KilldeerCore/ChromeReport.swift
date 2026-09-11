@@ -28,6 +28,7 @@ public struct ChromeReport: Codable, Sendable {
         public let profileAccount: String?
         public let remoteDebuggingPort: Int?
         public let remoteDebuggingPipe: Bool
+        public let remoteDebuggingPortShared: Bool
         public let debugEndpointReachable: Bool?
         public let debugBrowserVersion: String?
         public let webSocketDebuggerUrl: String?
@@ -72,6 +73,7 @@ extension ChromeReport.Instance {
         try container.encodeAlways(profileAccount, forKey: .profileAccount)
         try container.encodeAlways(remoteDebuggingPort, forKey: .remoteDebuggingPort)
         try container.encode(remoteDebuggingPipe, forKey: .remoteDebuggingPipe)
+        try container.encode(remoteDebuggingPortShared, forKey: .remoteDebuggingPortShared)
         try container.encodeAlways(debugEndpointReachable, forKey: .debugEndpointReachable)
         try container.encodeAlways(debugBrowserVersion, forKey: .debugBrowserVersion)
         try container.encodeAlways(webSocketDebuggerUrl, forKey: .webSocketDebuggerUrl)
@@ -97,7 +99,9 @@ extension ChromeReport {
         self.generatedAt = generatedAt
         self.instances = instances.map { instance in
             let port = instance.remoteDebuggingPort
-            let probe = port.flatMap { probes[$0] }
+            // Left unchecked when the port is contested: something answered,
+            // but saying it was this instance would be a guess.
+            let probe = instance.sharesDebugPort ? nil : port.flatMap { probes[$0] }
             return Instance(
                 browser: instance.displayName,
                 browserKind: instance.kind?.rawValue,
@@ -109,6 +113,7 @@ extension ChromeReport {
                 profileAccount: instance.profile?.accountName,
                 remoteDebuggingPort: port,
                 remoteDebuggingPipe: instance.remoteDebugging == .pipe,
+                remoteDebuggingPortShared: instance.sharesDebugPort,
                 debugEndpointReachable: probe.map { $0 != nil },
                 debugBrowserVersion: probe.flatMap { $0?.browser },
                 webSocketDebuggerUrl: probe.flatMap { $0?.webSocketDebuggerURL },
