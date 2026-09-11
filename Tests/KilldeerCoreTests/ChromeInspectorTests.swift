@@ -335,6 +335,21 @@ final class ChromeInspectorTests: XCTestCase {
         XCTAssertEqual(instances[0].helpers.map(\.identity.pid), [101])
     }
 
+    /// Two browsers can share a user-data-dir, and then the database names
+    /// both. Picking one would decide by luck which browser a kill aimed at the
+    /// handler's PID takes down.
+    func testCrashpadHandlerIsNotGuessedBetweenBrowsersSharingADirectory() {
+        let first = finding(pid: 100, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/shared"])
+        let second = finding(pid: 200, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/shared"])
+        let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [
+            crashpadPath, "--database=/tmp/shared/Crashpad"
+        ])
+        let instances = ChromeInspector(catalog: catalog()).instances(from: [first, second, crashpad])
+        XCTAssertEqual(instances.count, 2)
+        XCTAssertTrue(instances.allSatisfy { $0.helpers.isEmpty })
+        XCTAssertFalse(instances.contains { $0.isOrphaned })
+    }
+
     func testCrashpadHandlerOfAVanishedBrowserStaysOrphaned() {
         let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [
             crashpadPath, "--database=/tmp/gone/Crashpad"

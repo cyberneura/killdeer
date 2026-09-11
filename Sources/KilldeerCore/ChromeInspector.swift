@@ -263,9 +263,12 @@ public struct ChromeInspector: Sendable {
     ) -> CrashpadOwner {
         if let database = helper.commandLine.crashpadDatabase {
             let directory = URL(fileURLWithPath: database).deletingLastPathComponent().path
-            if let owner = userDataDirectories.first(where: { $0.value == directory })?.key {
-                return .browser(owner)
-            }
+            // Nothing stops two browsers sharing a user-data-dir, and a
+            // dictionary has no order to break the tie with, so picking one
+            // would decide by luck which browser `chrome kill` takes down.
+            let owners = userDataDirectories.filter { $0.value == directory }.keys
+            if owners.count > 1 { return .ambiguous }
+            if let owner = owners.first { return .browser(owner) }
         }
         guard let bundle = ChromeBrowserKind.appBundlePath(of: helper.commandLine.executablePath) else { return .none }
         let fromSameBundle = browsers.filter { ChromeBrowserKind.appBundlePath(of: $0.commandLine.executablePath) == bundle }
