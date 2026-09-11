@@ -156,7 +156,7 @@ final class ChromeProfileCatalogTests: XCTestCase {
         let catalog = ChromeProfileCatalog { _ in Data("""
         {"profile":{"info_cache":{"Profile 3":{"name":"Work","user_name":"me@example.com"}}}}
         """.utf8) }
-        let profile = catalog.profile(userDataDirectory: "/tmp/x", profileDirectory: "Profile 3")
+        let profile = catalog.localState(inUserDataDirectory: "/tmp/x")?.profiles["Profile 3"]
         XCTAssertEqual(profile, ChromeProfile(name: "Work", accountName: "me@example.com"))
     }
 
@@ -166,7 +166,7 @@ final class ChromeProfileCatalogTests: XCTestCase {
         let catalog = ChromeProfileCatalog { _ in Data("""
         {"profile":{"info_cache":{"Default":{"name":"Personal","user_name":""}}}}
         """.utf8) }
-        XCTAssertNil(catalog.profile(userDataDirectory: "/tmp/x", profileDirectory: "Default")?.accountName)
+        XCTAssertNil(catalog.localState(inUserDataDirectory: "/tmp/x")?.profiles["Default"]?.accountName)
     }
 
     /// A read landing mid-rewrite must not leave the menu bar app without a
@@ -180,8 +180,8 @@ final class ChromeProfileCatalogTests: XCTestCase {
             {"profile":{"info_cache":{"Default":{"name":"Personal","user_name":""}}}}
             """.utf8)
         }
-        XCTAssertNil(catalog.profile(userDataDirectory: "/tmp/x", profileDirectory: "Default"))
-        XCTAssertEqual(catalog.profile(userDataDirectory: "/tmp/x", profileDirectory: "Default")?.name, "Personal")
+        XCTAssertNil(catalog.localState(inUserDataDirectory: "/tmp/x")?.profiles["Default"])
+        XCTAssertEqual(catalog.localState(inUserDataDirectory: "/tmp/x")?.profiles["Default"]?.name, "Personal")
     }
 
     /// Caching for the life of the process would mean a profile rename never
@@ -192,20 +192,41 @@ final class ChromeProfileCatalogTests: XCTestCase {
         let catalog = ChromeProfileCatalog(cacheLifetime: 30, now: { clock }) { _ in
             Data("{\"profile\":{\"info_cache\":{\"Default\":{\"name\":\"\(name)\"}}}}".utf8)
         }
-        XCTAssertEqual(catalog.profile(userDataDirectory: "/tmp/x", profileDirectory: "Default")?.name, "Before")
+        XCTAssertEqual(catalog.localState(inUserDataDirectory: "/tmp/x")?.profiles["Default"]?.name, "Before")
 
         name = "After"
         clock = clock.addingTimeInterval(10)
-        XCTAssertEqual(catalog.profile(userDataDirectory: "/tmp/x", profileDirectory: "Default")?.name, "Before")
+        XCTAssertEqual(catalog.localState(inUserDataDirectory: "/tmp/x")?.profiles["Default"]?.name, "Before")
 
         clock = clock.addingTimeInterval(30)
-        XCTAssertEqual(catalog.profile(userDataDirectory: "/tmp/x", profileDirectory: "Default")?.name, "After")
+        XCTAssertEqual(catalog.localState(inUserDataDirectory: "/tmp/x")?.profiles["Default"]?.name, "After")
+    }
+
+    /// An unreadable file is not a file that says "Default". A browser whose
+    /// last-used profile is Profile 3 must not be reported as Default because
+    /// the read happened to land mid-write.
+    func testAFailedReadIsNotReportedAsTheDefaultProfile() {
+        let browser = ProcessFinding(
+            process: ProcessSnapshot(
+                identity: ProcessIdentity(pid: 100, startTime: Date(timeIntervalSince1970: 1000)),
+                parentPID: 1,
+                name: "Google Chrome",
+                executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                arguments: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "--user-data-dir=/tmp/agent"],
+                totalCPUTimeNanoseconds: 0
+            ),
+            cpuPercent: 0, isOrphanChromeHelper: false, score: 0, reasons: []
+        )
+        let inspector = ChromeInspector(catalog: ChromeProfileCatalog { _ in nil })
+        let instance = inspector.instances(from: [browser]).first
+        XCTAssertNil(instance?.profileDirectory)
+        XCTAssertEqual(instance?.profileDescription, "profile unknown")
     }
 
     func testUnreadableOrTruncatedLocalStateIsTolerated() {
-        XCTAssertTrue(ChromeProfileCatalog.parse(nil).isEmpty)
-        XCTAssertTrue(ChromeProfileCatalog.parse(Data("{\"profile\":{\"info_c".utf8)).isEmpty)
-        XCTAssertNil(ChromeProfileCatalog.parse(nil).lastUsed)
+        XCTAssertNil(ChromeProfileCatalog(fileContents: { _ in nil }).localState(inUserDataDirectory: "/tmp/x"))
+        XCTAssertNil(ChromeProfileCatalog(fileContents: { _ in Data("{\"profile\":{\"info_c".utf8) })
+            .localState(inUserDataDirectory: "/tmp/x"))
     }
 }
 

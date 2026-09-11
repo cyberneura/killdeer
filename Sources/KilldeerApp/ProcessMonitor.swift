@@ -24,6 +24,7 @@ final class ProcessMonitor: ObservableObject {
     private var previousCPUTicks: CPUTicks?
     private let pollingInterval: TimeInterval
     private var pollingTask: Task<Void, Never>?
+    private var runningScan: Task<Void, Never>?
     private var knownRunawayPIDs: Set<pid_t> = []
 
     var hasRunaways: Bool { !findings.isEmpty }
@@ -185,8 +186,25 @@ final class ProcessMonitor: ObservableObject {
         terminationError = failure
     }
 
+    /// Scans are serialised rather than skipped.
+    ///
+    /// A periodic scan that took its snapshots before a kill is about to
+    /// publish what was just terminated. Turning the post-kill refresh away
+    /// because that one is still running would leave the menu offering a
+    /// process that no longer exists until the next poll.
     private func scan() async {
-        guard !isScanning, !isWorking else { return }
+        if let running = runningScan { await running.value }
+        guard !isWorking else { return }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performScan()
+        }
+        runningScan = task
+        await task.value
+        if runningScan == task { runningScan = nil }
+    }
+
+    private func performScan() async {
         isScanning = true
         lastError = nil
         do {

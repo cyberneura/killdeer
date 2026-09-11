@@ -271,15 +271,14 @@ public struct ChromeInspector: Sendable {
         let commandLine = browser.commandLine
         // Chromium reopens whatever profile it used last, so assuming "Default"
         // names the wrong one on any machine with more than one profile.
-        let readableDirectory = Self.readableDirectory(userDataDirectory)
-        // "Default" is only a safe assumption once the directory has been read
-        // and found to name no last-used profile. Assuming it for a directory
-        // that could not be read would state a profile with the same confidence
-        // as one that was actually looked up, and Chromium may well have
-        // reopened a different one.
+        // "Default" is only a safe assumption once `Local State` has been read
+        // and found to name no last-used profile. Assuming it for a file that
+        // could not be read would state a profile with the same confidence as
+        // one actually looked up, and Chromium may well have reopened another.
+        let localState = catalog.localState(inUserDataDirectory: Self.readableDirectory(userDataDirectory))
         let profileDirectory = commandLine.profileDirectory
-            ?? catalog.lastUsedProfileDirectory(inUserDataDirectory: readableDirectory)
-            ?? (readableDirectory == nil ? nil : "Default")
+            ?? localState?.lastUsed
+            ?? (localState == nil ? nil : "Default")
 
         return ChromeInstance(
             kind: ChromeBrowserKind.detect(executablePath: commandLine.executablePath),
@@ -287,7 +286,7 @@ public struct ChromeInspector: Sendable {
             helpers: helpers.sorted { $0.identity.pid < $1.identity.pid },
             userDataDirectory: userDataDirectory,
             profileDirectory: profileDirectory,
-            profile: catalog.profile(userDataDirectory: readableDirectory, profileDirectory: profileDirectory),
+            profile: profileDirectory.flatMap { localState?.profiles[$0] },
             isHeadless: commandLine.isHeadless,
             remoteDebugging: commandLine.remoteDebugging,
             remoteDebuggingPort: resolvedPort(for: commandLine.remoteDebugging, userDataDirectory: userDataDirectory),

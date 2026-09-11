@@ -21,15 +21,22 @@ public struct ChromeProfile: Equatable, Sendable {
 /// swallowed and reported as "no profile information": the command still has
 /// something useful to say without it, and this is a strictly read-only,
 /// best-effort lookup.
-public final class ChromeProfileCatalog: @unchecked Sendable {
-    struct LocalState {
-        var profiles: [String: ChromeProfile]
-        /// The profile the browser reopens when no `--profile-directory` is
-        /// given. Absent in browsers that never wrote the key, such as Vivaldi.
-        var lastUsed: String?
+/// What a user-data-dir's `Local State` says about its profiles.
+///
+/// Only ever handed out for a read that parsed. "Read it and it named no
+/// last-used profile" and "could not read it" lead to different answers, and
+/// collapsing them makes Killdeer state a profile it never looked up.
+public struct ChromeLocalState: Sendable {
+    public let profiles: [String: ChromeProfile]
+    /// The profile the browser reopens when no `--profile-directory` is given.
+    /// Absent in browsers that never wrote the key, such as Vivaldi.
+    public let lastUsed: String?
 
-        var isEmpty: Bool { profiles.isEmpty && lastUsed == nil }
-    }
+    var isEmpty: Bool { profiles.isEmpty && lastUsed == nil }
+}
+
+public final class ChromeProfileCatalog: @unchecked Sendable {
+    typealias LocalState = ChromeLocalState
 
     private var cache: [String: (state: LocalState, readAt: Date)] = [:]
     private let lock = NSLock()
@@ -53,31 +60,22 @@ public final class ChromeProfileCatalog: @unchecked Sendable {
         self.fileContents = fileContents
     }
 
-    public func profile(userDataDirectory: String?, profileDirectory: String?) -> ChromeProfile? {
-        guard let userDataDirectory, let profileDirectory else { return nil }
-        return localState(inUserDataDirectory: userDataDirectory).profiles[profileDirectory]
-    }
-
-    /// The profile a browser started without `--profile-directory` will have
-    /// opened. Chromium reopens whatever it used last, so assuming `Default`
-    /// names the wrong profile on any machine with more than one.
-    public func lastUsedProfileDirectory(inUserDataDirectory directory: String?) -> String? {
+    /// nil when the file could not be read or parsed, which is distinct from a
+    /// file that parsed and named nothing. The browser rewrites it while it
+    /// runs, so a read can land mid-write.
+    public func localState(inUserDataDirectory directory: String?) -> ChromeLocalState? {
         guard let directory else { return nil }
-        return localState(inUserDataDirectory: directory).lastUsed
-    }
-
-    private func localState(inUserDataDirectory directory: String) -> LocalState {
         lock.lock()
         defer { lock.unlock() }
         if let cached = cache[directory], now().timeIntervalSince(cached.readAt) < cacheLifetime {
             return cached.state
         }
         let parsed = Self.parse(fileContents(directory + "/Local State"))
-        // Only a successful read is remembered. The browser rewrites this file
-        // while it runs, so a read can land mid-write and come back empty;
-        // caching that would leave the menu bar app showing no profile name
-        // until the entry expired, when the next poll would have got it.
-        if !parsed.isEmpty { cache[directory] = (parsed, now()) }
+        // Only a successful read is remembered, so a mid-write read does not
+        // leave the menu bar app without a profile name until the entry would
+        // have expired, when the next poll would have got it.
+        guard !parsed.isEmpty else { return nil }
+        cache[directory] = (parsed, now())
         return parsed
     }
 
