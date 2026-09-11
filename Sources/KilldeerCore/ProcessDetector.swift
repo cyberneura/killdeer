@@ -16,14 +16,13 @@ public struct ProcessDetector: Sendable {
 
     public func findings(previous: [ProcessSnapshot], current: [ProcessSnapshot], elapsed: TimeInterval) -> [ProcessFinding] {
         let prior = Dictionary(uniqueKeysWithValues: previous.map { ($0.identity, $0) })
-        let currentPIDs = Set(current.map { $0.identity.pid })
         let byPID = Dictionary(uniqueKeysWithValues: current.map { ($0.identity.pid, $0) })
 
         return current.map { process in
             let oldCPU = prior[process.identity]?.totalCPUTimeNanoseconds ?? process.totalCPUTimeNanoseconds
             let delta = process.totalCPUTimeNanoseconds >= oldCPU ? process.totalCPUTimeNanoseconds - oldCPU : 0
             let cpu = elapsed > 0 ? Double(delta) / (elapsed * 1_000_000_000) * 100 : 0
-            let orphan = isDisconnectedChromeHelper(process, currentPIDs: currentPIDs, byPID: byPID)
+            let orphan = isDisconnectedChromeHelper(process, byPID: byPID)
             var score = 0
             var reasons: [String] = []
             if cpu >= configuration.cpuThresholdPercent {
@@ -43,23 +42,12 @@ public struct ProcessDetector: Sendable {
         .sorted { ($0.score, $0.cpuPercent) > ($1.score, $1.cpuPercent) }
     }
 
-    private func isDisconnectedChromeHelper(
-        _ process: ProcessSnapshot,
-        currentPIDs: Set<pid_t>,
-        byPID: [pid_t: ProcessSnapshot]
-    ) -> Bool {
+    /// Deliberately narrower than `ChromeInspector`, which recognises every
+    /// Chromium-derived browser. Widening the ancestor test here would change
+    /// which processes `clean-chrome` terminates.
+    private func isDisconnectedChromeHelper(_ process: ProcessSnapshot, byPID: [pid_t: ProcessSnapshot]) -> Bool {
         guard isChromeHelper(process) else { return false }
-        if process.parentPID <= 1 || !currentPIDs.contains(process.parentPID) { return true }
-
-        var visited: Set<pid_t> = [process.identity.pid]
-        var parent = process.parentPID
-        for _ in 0..<32 {
-            guard parent > 1, !visited.contains(parent), let ancestor = byPID[parent] else { return true }
-            if isChromeBrowser(ancestor) { return false }
-            visited.insert(parent)
-            parent = ancestor.parentPID
-        }
-        return true
+        return ProcessAncestry.nearestAncestor(of: process, byPID: byPID, matching: isChromeBrowser) == nil
     }
 
     private func isChromeHelper(_ process: ProcessSnapshot) -> Bool {

@@ -12,8 +12,10 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var cpuPercent: Double?
     @Published private(set) var temperatureCelsius: Double?
+    @Published private(set) var chromeInstances: [ChromeInstance] = []
 
     private let detector = ProcessDetector()
+    private let chromeInspector = ChromeInspector()
     private let temperatureReader = TemperatureReader()
     private var previousCPUTicks: CPUTicks?
     private let pollingInterval: TimeInterval
@@ -102,6 +104,27 @@ final class ProcessMonitor: ObservableObject {
         }
     }
 
+    /// Signals only the browser process. Chrome shuts its own helpers down on
+    /// exit, and killing them first makes it report a crash on next launch.
+    ///
+    /// Takes no orphan row: those group unrelated strays under one heading, so
+    /// there is no single process that stands for the row. The menu offers
+    /// those one at a time through `killChromeProcess` instead.
+    func killChromeInstance(_ instance: ChromeInstance) {
+        guard let browser = instance.browser else { return }
+        killChromeProcess(browser)
+    }
+
+    func killChromeProcess(_ process: ChromeProcess) {
+        terminate([ProcessFinding(
+            process: process.snapshot,
+            cpuPercent: process.cpuPercent,
+            isOrphanChromeHelper: false,
+            score: 0,
+            reasons: []
+        )])
+    }
+
     func openActivityMonitor() {
         // Resolved by bundle identifier rather than by path. The path has moved
         // between macOS versions, and Launch Services knows where it is now.
@@ -150,9 +173,14 @@ final class ProcessMonitor: ObservableObject {
         isScanning = true
         lastError = nil
         do {
-            let sampled = try await Task.detached { [detector] in
-                try detector.sample().filter(\.isRunaway)
+            // One sample feeds both views. Sampling twice would double the
+            // one-second measurement window on every poll.
+            let result = try await Task.detached { [detector, chromeInspector] in
+                let all = try detector.sample()
+                return (runaways: all.filter(\.isRunaway), chrome: chromeInspector.instances(from: all))
             }.value
+            chromeInstances = result.chrome
+            let sampled = result.runaways
             let currentPIDs = Set(sampled.map { $0.process.identity.pid })
             let newPIDs = currentPIDs.subtracting(knownRunawayPIDs)
             findings = sampled

@@ -21,8 +21,10 @@ public struct ProcessEnumerator: Sendable {
                 identity: ProcessIdentity(pid: pid, startTime: details.startTime),
                 parentPID: entry.kp_eproc.e_ppid,
                 name: name,
+                executablePath: details.executablePath,
                 arguments: details.arguments,
-                totalCPUTimeNanoseconds: details.cpuNanoseconds
+                totalCPUTimeNanoseconds: details.cpuNanoseconds,
+                residentMemoryBytes: details.residentBytes
             )
         }
     }
@@ -55,7 +57,7 @@ public struct ProcessEnumerator: Sendable {
         throw KilldeerError.sysctlFailed("process list", ENOMEM)
     }
 
-    private func details(for pid: pid_t) -> (startTime: Date, cpuNanoseconds: UInt64, arguments: [String])? {
+    private func details(for pid: pid_t) -> (startTime: Date, cpuNanoseconds: UInt64, residentBytes: UInt64, executablePath: String, arguments: [String])? {
         var bsd = proc_bsdinfo()
         let bsdSize = MemoryLayout<proc_bsdinfo>.size
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, Int32(bsdSize)) == Int32(bsdSize) else { return nil }
@@ -66,7 +68,8 @@ public struct ProcessEnumerator: Sendable {
 
         let start = Date(timeIntervalSince1970: TimeInterval(bsd.pbi_start_tvsec) + TimeInterval(bsd.pbi_start_tvusec) / 1_000_000)
         let cpu = task.pti_total_user &+ task.pti_total_system
-        return (start, cpu, processArguments(pid: pid))
+        let argumentVector = processArgumentVector(pid: pid)
+        return (start, cpu, task.pti_resident_size, argumentVector.executablePath, argumentVector.arguments)
     }
 
     private func processName(pid: pid_t) -> String? {
@@ -75,21 +78,33 @@ public struct ProcessEnumerator: Sendable {
         return String(cString: buffer)
     }
 
-    private func processArguments(pid: pid_t) -> [String] {
+    /// Reads a process's argument vector, keeping the kernel's own copy of the
+    /// executable path separate from `argv[0]`.
+    ///
+    /// The two are not the same thing. `argv[0]` is whatever the parent chose
+    /// to pass and can be a bare name or an outright lie, while the path the
+    /// kernel records is the file that was actually executed. Anything deciding
+    /// *what a process is* has to use the latter.
+    ///
+    /// `KERN_PROCARGS2` lays this out as the argument count, the executable
+    /// path, a run of padding NULs, and then the arguments.
+    private func processArgumentVector(pid: pid_t) -> (executablePath: String, arguments: [String]) {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
-        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return ("", []) }
         var data = [UInt8](repeating: 0, count: size)
         let result = data.withUnsafeMutableBytes { bytes in
             sysctl(&mib, u_int(mib.count), bytes.baseAddress, &size, nil, 0)
         }
-        guard result == 0 else { return [] }
+        guard result == 0 else { return ("", []) }
         data.removeSubrange(size..<data.count)
 
         let argc = data.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
-        guard argc > 0 else { return [] }
+        guard argc > 0 else { return ("", []) }
         var index = MemoryLayout<Int32>.size
-        while index < data.count, data[index] != 0 { index += 1 } // executable path
+        let pathStart = index
+        while index < data.count, data[index] != 0 { index += 1 }
+        let executablePath = String(bytes: data[pathStart..<index], encoding: .utf8) ?? ""
         while index < data.count, data[index] == 0 { index += 1 }
 
         var args: [String] = []
@@ -98,6 +113,6 @@ public struct ProcessEnumerator: Sendable {
             if end > index, let value = String(bytes: data[index..<end], encoding: .utf8) { args.append(value) }
             index = end == data.endIndex ? end : end + 1
         }
-        return args
+        return (executablePath, args)
     }
 }
