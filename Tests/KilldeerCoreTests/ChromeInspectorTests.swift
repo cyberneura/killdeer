@@ -350,6 +350,10 @@ final class ChromeInspectorTests: XCTestCase {
             XCTAssertEqual(instance?.userDataDirectory, directory)
             XCTAssertNil(instance?.profile)
             XCTAssertNil(instance?.remoteDebuggingPort)
+            // Not "Default": Chromium may have reopened any profile named by a
+            // Local State this process cannot read.
+            XCTAssertNil(instance?.profileDirectory)
+            XCTAssertEqual(instance?.profileDescription, "profile unknown")
             XCTAssertEqual(reads, [], "nothing should be read from a path Killdeer cannot resolve")
         }
     }

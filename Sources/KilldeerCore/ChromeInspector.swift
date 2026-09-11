@@ -272,9 +272,14 @@ public struct ChromeInspector: Sendable {
         // Chromium reopens whatever profile it used last, so assuming "Default"
         // names the wrong one on any machine with more than one profile.
         let readableDirectory = Self.readableDirectory(userDataDirectory)
+        // "Default" is only a safe assumption once the directory has been read
+        // and found to name no last-used profile. Assuming it for a directory
+        // that could not be read would state a profile with the same confidence
+        // as one that was actually looked up, and Chromium may well have
+        // reopened a different one.
         let profileDirectory = commandLine.profileDirectory
             ?? catalog.lastUsedProfileDirectory(inUserDataDirectory: readableDirectory)
-            ?? (userDataDirectory == nil ? nil : "Default")
+            ?? (readableDirectory == nil ? nil : "Default")
 
         return ChromeInstance(
             kind: ChromeBrowserKind.detect(executablePath: commandLine.executablePath),
