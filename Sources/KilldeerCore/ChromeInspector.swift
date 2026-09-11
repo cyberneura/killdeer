@@ -261,7 +261,7 @@ public struct ChromeInspector: Sendable {
         ProcessAncestry.nearestAncestor(of: browser.snapshot, byPID: byPID) { ancestor in
             let name = ancestor.name
             return !uninformativeLaunchers.contains(name.lowercased())
-                && ChromeBrowserKind.detect(executablePath: ancestor.arguments.first ?? name) == nil
+                && ChromeBrowserKind.detect(executablePath: ancestor.executablePath) == nil
         }?.name
     }
 }

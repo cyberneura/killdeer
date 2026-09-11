@@ -96,11 +96,15 @@ final class ProcessMonitor: ObservableObject {
                     try detector.sample().filter(\.isOrphanChromeHelper)
                 }.value
                 try await terminateInBackground(orphans)
-                await scan()
             } catch {
                 lastError = error.localizedDescription
             }
+            // Cleared before the refresh, not after: scan returns early while a
+            // termination is in flight, so scanning first would leave the menu
+            // listing what was just killed until the next poll — long enough to
+            // press it again and be told the process no longer exists.
             isWorking = false
+            await scan()
         }
     }
 
@@ -201,11 +205,14 @@ final class ProcessMonitor: ObservableObject {
             do {
                 try await terminateInBackground(targets)
                 selected.removeAll()
-                await scan()
             } catch {
                 lastError = error.localizedDescription
             }
+            // See cleanOrphanChrome: the refresh has to happen with isWorking
+            // already cleared. A failure is refreshed too, since the usual
+            // reason to fail is that the process went away on its own.
             isWorking = false
+            await scan()
         }
     }
 

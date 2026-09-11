@@ -362,6 +362,15 @@ final class ChromeInspectorTests: XCTestCase {
         XCTAssertEqual(instance?.launchedBy, "node")
     }
 
+    /// A browser that relaunched itself must not be reported as its own
+    /// launcher. The ancestor is recognised by the path the kernel recorded,
+    /// because a relaunch can pass whatever `argv[0]` it likes.
+    func testABrowserRelaunchingItselfIsNotReportedAsTheLauncher() {
+        let parent = finding(pid: 900, parent: 1, name: "Google Chrome", args: ["the-old-chrome"], executablePath: chromePath)
+        let browser = finding(pid: 901, parent: 900, name: "Google Chrome", args: [chromePath])
+        XCTAssertNil(ChromeInspector(catalog: catalog()).instances(from: [parent, browser]).first { $0.browser?.identity.pid == 901 }?.launchedBy)
+    }
+
     func testJSONReportKeepsOneShapeAcrossInstances() throws {
         let browser = finding(pid: 1000, parent: 1, name: "Google Chrome", args: [chromePath, "--remote-debugging-port=9222"])
         let orphan = finding(pid: 1001, parent: 999, name: "helper", args: [helperPath, "--type=renderer"])
@@ -386,13 +395,15 @@ final class ChromeInspectorTests: XCTestCase {
         """.utf8) }
     }
 
-    private func finding(pid: pid_t, parent: pid_t, name: String, args: [String]) -> ProcessFinding {
+    /// `executablePath` defaults to `argv[0]` because that is what it is in
+    /// practice; pass it separately to cover a process that lies about argv.
+    private func finding(pid: pid_t, parent: pid_t, name: String, args: [String], executablePath: String? = nil) -> ProcessFinding {
         ProcessFinding(
             process: ProcessSnapshot(
                 identity: ProcessIdentity(pid: pid, startTime: Date(timeIntervalSince1970: 1000)),
                 parentPID: parent,
                 name: name,
-                executablePath: args.first ?? "",
+                executablePath: executablePath ?? args.first ?? "",
                 arguments: args,
                 totalCPUTimeNanoseconds: 0,
                 residentMemoryBytes: 1_048_576
