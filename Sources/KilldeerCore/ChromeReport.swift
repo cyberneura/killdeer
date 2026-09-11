@@ -29,6 +29,7 @@ public struct ChromeReport: Codable, Sendable {
         public let remoteDebuggingPort: Int?
         public let remoteDebuggingPipe: Bool
         public let remoteDebuggingPortShared: Bool
+        public let listeningOnDebuggingPort: Bool
         public let debugEndpointReachable: Bool?
         public let debugBrowserVersion: String?
         public let webSocketDebuggerUrl: String?
@@ -74,6 +75,7 @@ extension ChromeReport.Instance {
         try container.encodeAlways(remoteDebuggingPort, forKey: .remoteDebuggingPort)
         try container.encode(remoteDebuggingPipe, forKey: .remoteDebuggingPipe)
         try container.encode(remoteDebuggingPortShared, forKey: .remoteDebuggingPortShared)
+        try container.encode(listeningOnDebuggingPort, forKey: .listeningOnDebuggingPort)
         try container.encodeAlways(debugEndpointReachable, forKey: .debugEndpointReachable)
         try container.encodeAlways(debugBrowserVersion, forKey: .debugBrowserVersion)
         try container.encodeAlways(webSocketDebuggerUrl, forKey: .webSocketDebuggerUrl)
@@ -99,9 +101,10 @@ extension ChromeReport {
         self.generatedAt = generatedAt
         self.instances = instances.map { instance in
             let port = instance.remoteDebuggingPort
-            // Left unchecked when the port is contested: something answered,
-            // but saying it was this instance would be a guess.
-            let probe = instance.sharesDebugPort ? nil : port.flatMap { probes[$0] }
+            // Left unchecked unless this browser holds the port outright.
+            // Something may answer on it, but saying it was this instance when
+            // the bind failed or another holds it too would be a guess.
+            let probe = instance.ownsDebugEndpoint ? port.flatMap { probes[$0] } : nil
             return Instance(
                 browser: instance.displayName,
                 browserKind: instance.kind?.rawValue,
@@ -114,6 +117,7 @@ extension ChromeReport {
                 remoteDebuggingPort: port,
                 remoteDebuggingPipe: instance.remoteDebugging == .pipe,
                 remoteDebuggingPortShared: instance.sharesDebugPort,
+                listeningOnDebuggingPort: instance.isListeningOnDebugPort,
                 debugEndpointReachable: probe.map { $0 != nil },
                 debugBrowserVersion: probe.flatMap { $0?.browser },
                 webSocketDebuggerUrl: probe.flatMap { $0?.webSocketDebuggerURL },

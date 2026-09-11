@@ -45,6 +45,13 @@ public struct ChromeInstance: Sendable {
     /// answered, and this is the situation the command exists to surface rather
     /// than paper over.
     public let sharesDebugPort: Bool
+    /// Whether the browser process actually holds the port. A switch is a
+    /// request; the bind can have failed, leaving something else answering
+    /// there.
+    public let isListeningOnDebugPort: Bool
+
+    /// Only then does an answer on that port belong to this instance.
+    public var ownsDebugEndpoint: Bool { isListeningOnDebugPort && !sharesDebugPort }
     public let automationFlags: [String]
     /// The process that launched the browser, when it is something other than
     /// the window server: a terminal, chromedriver, node, python.
@@ -63,7 +70,8 @@ public struct ChromeInstance: Sendable {
             kind: kind, browser: browser, helpers: helpers,
             userDataDirectory: userDataDirectory, profileDirectory: profileDirectory, profile: profile,
             isHeadless: isHeadless, remoteDebugging: remoteDebugging, remoteDebuggingPort: remoteDebuggingPort,
-            sharesDebugPort: true, automationFlags: automationFlags, launchedBy: launchedBy
+            sharesDebugPort: true, isListeningOnDebugPort: isListeningOnDebugPort,
+            automationFlags: automationFlags, launchedBy: launchedBy
         )
     }
     public var allProcesses: [ChromeProcess] { (browser.map { [$0] } ?? []) + helpers }
@@ -89,12 +97,15 @@ public struct ChromeInstance: Sendable {
 public struct ChromeInspector: Sendable {
     private let catalog: ChromeProfileCatalog
     private let fileContents: @Sendable (String) -> String?
+    private let listeningPorts: @Sendable (pid_t) -> Set<Int>
 
     public init(
         catalog: ChromeProfileCatalog = .init(),
+        listeningPorts: @escaping @Sendable (pid_t) -> Set<Int> = { ListeningPorts()(pid: $0) },
         fileContents: @escaping @Sendable (String) -> String? = { try? String(contentsOfFile: $0, encoding: .utf8) }
     ) {
         self.catalog = catalog
+        self.listeningPorts = listeningPorts
         self.fileContents = fileContents
     }
 
@@ -195,13 +206,16 @@ public struct ChromeInspector: Sendable {
                 remoteDebugging: nil,
                 remoteDebuggingPort: nil,
                 sharesDebugPort: false,
+                isListeningOnDebugPort: false,
                 automationFlags: [],
                 launchedBy: nil
             )
         }
 
+        // Counted over the instances holding the port, not the ones asking for
+        // it: a browser whose bind failed is not contesting anything.
         let contestedPorts = Set(
-            running.compactMap(\.remoteDebuggingPort)
+            running.filter(\.isListeningOnDebugPort).compactMap(\.remoteDebuggingPort)
                 .reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
                 .filter { $0.value > 1 }
                 .keys
@@ -269,6 +283,7 @@ public struct ChromeInspector: Sendable {
         byPID: [pid_t: ProcessSnapshot]
     ) -> ChromeInstance {
         let commandLine = browser.commandLine
+        let port = resolvedPort(for: commandLine.remoteDebugging, userDataDirectory: userDataDirectory)
         // Chromium reopens whatever profile it used last, so assuming "Default"
         // names the wrong one on any machine with more than one profile.
         // "Default" is only a safe assumption once `Local State` has been read
@@ -289,8 +304,9 @@ public struct ChromeInspector: Sendable {
             profile: profileDirectory.flatMap { localState?.profiles[$0] },
             isHeadless: commandLine.isHeadless,
             remoteDebugging: commandLine.remoteDebugging,
-            remoteDebuggingPort: resolvedPort(for: commandLine.remoteDebugging, userDataDirectory: userDataDirectory),
+            remoteDebuggingPort: port,
             sharesDebugPort: false,
+            isListeningOnDebugPort: port.map { listeningPorts(browser.identity.pid).contains($0) } ?? false,
             automationFlags: commandLine.automationFlags,
             launchedBy: Self.launcher(of: browser, byPID: byPID)
         )

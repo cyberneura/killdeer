@@ -35,8 +35,19 @@ extension ChromeInstance {
         if isHeadless { tags.append("headless") }
         switch remoteDebugging {
         case .port:
-            let port = remoteDebuggingPort.map { "port \($0)" } ?? "port unresolved"
-            tags.append(sharesDebugPort ? port + ", contested" : port)
+            // With no port resolved there is nothing to check the browser
+            // against, so it is left at that rather than also called silent.
+            guard let port = remoteDebuggingPort else {
+                tags.append("port unresolved")
+                break
+            }
+            if sharesDebugPort {
+                tags.append("port \(port), contested")
+            } else if !isListeningOnDebugPort {
+                tags.append("port \(port), not listening")
+            } else {
+                tags.append("port \(port)")
+            }
         case .pipe: tags.append("debug pipe")
         case nil: break
         }

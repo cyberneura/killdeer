@@ -417,7 +417,7 @@ final class ChromeInspectorTests: XCTestCase {
         let browser = finding(pid: 600, parent: 1, name: "Google Chrome", args: [
             chromePath, "--user-data-dir=/tmp/agent", "--remote-debugging-port=0"
         ])
-        let inspector = ChromeInspector(catalog: catalog()) { path in
+        let inspector = ChromeInspector(catalog: catalog(), listeningPorts: { _ in [50618] }) { path in
             path == "/tmp/agent/DevToolsActivePort" ? "50618\n/devtools/browser/abc" : nil
         }
         let instance = inspector.instances(from: [browser]).first
@@ -473,7 +473,9 @@ final class ChromeInspectorTests: XCTestCase {
         let first = finding(pid: 100, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"])
         let second = finding(pid: 200, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/b", "--remote-debugging-port=9222"])
         let lone = finding(pid: 300, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/c", "--remote-debugging-port=9333"])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [first, second, lone])
+        let instances = ChromeInspector(catalog: catalog(), listeningPorts: { pid in
+            pid == 300 ? [9333] : [9222]
+        }).instances(from: [first, second, lone])
 
         XCTAssertEqual(instances.filter(\.sharesDebugPort).map { $0.browser?.identity.pid }, [100, 200])
         XCTAssertTrue(instances.first { $0.browser?.identity.pid == 100 }?.tags.contains("port 9222, contested") == true)
@@ -489,6 +491,59 @@ final class ChromeInspectorTests: XCTestCase {
         XCTAssertNil(contested.debugEndpointReachable, "a contested port must read as unchecked, not as this instance's")
         XCTAssertNil(contested.webSocketDebuggerUrl)
         XCTAssertEqual(probed.instances.first { $0.remoteDebuggingPort == 9333 }?.debugEndpointReachable, true)
+    }
+
+    /// A switch is a request, not a fact. Something else can hold the port,
+    /// including an Electron app this command deliberately does not list, and
+    /// answering its `/json/version` as this browser's would be the confusion
+    /// the command exists to end.
+    func testAPortTheBrowserDoesNotHoldIsNotAttributedToIt() throws {
+        let browser = finding(pid: 100, parent: 1, name: "Google Chrome", args: [
+            chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"
+        ])
+        let instance = try XCTUnwrap(
+            ChromeInspector(catalog: catalog(), listeningPorts: { _ in [] }).instances(from: [browser]).first
+        )
+        XCTAssertEqual(instance.remoteDebuggingPort, 9222)
+        XCTAssertFalse(instance.isListeningOnDebugPort)
+        XCTAssertFalse(instance.ownsDebugEndpoint)
+        XCTAssertTrue(instance.tags.contains("port 9222, not listening"))
+
+        let report = ChromeReport(
+            instances: [instance],
+            probes: [9222: ChromeDebugTarget(port: 9222, browser: "IMPOSTOR/1.0", webSocketDebuggerURL: "ws://not-yours")]
+        )
+        XCTAssertNil(report.instances[0].debugEndpointReachable)
+        XCTAssertNil(report.instances[0].webSocketDebuggerUrl)
+        XCTAssertFalse(report.instances[0].listeningOnDebuggingPort)
+    }
+
+    func testAPortTheBrowserHoldsAloneIsAttributedToIt() throws {
+        let browser = finding(pid: 100, parent: 1, name: "Google Chrome", args: [
+            chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"
+        ])
+        let instance = try XCTUnwrap(
+            ChromeInspector(catalog: catalog(), listeningPorts: { _ in [9222] }).instances(from: [browser]).first
+        )
+        XCTAssertTrue(instance.ownsDebugEndpoint)
+        let report = ChromeReport(
+            instances: [instance],
+            probes: [9222: ChromeDebugTarget(port: 9222, browser: "Chrome/1", webSocketDebuggerURL: "ws://mine")]
+        )
+        XCTAssertEqual(report.instances[0].debugEndpointReachable, true)
+        XCTAssertEqual(report.instances[0].webSocketDebuggerUrl, "ws://mine")
+    }
+
+    /// A browser whose bind failed is not contesting anything, so the one that
+    /// did bind still gets the answer.
+    func testOnlyBrowsersActuallyHoldingAPortContestIt() {
+        let holder = finding(pid: 100, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"])
+        let loser = finding(pid: 200, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/b", "--remote-debugging-port=9222"])
+        let instances = ChromeInspector(catalog: catalog(), listeningPorts: { pid in pid == 100 ? [9222] : [] })
+            .instances(from: [holder, loser])
+        XCTAssertFalse(instances.contains { $0.sharesDebugPort })
+        XCTAssertTrue(instances.first { $0.browser?.identity.pid == 100 }?.ownsDebugEndpoint == true)
+        XCTAssertFalse(instances.first { $0.browser?.identity.pid == 200 }?.ownsDebugEndpoint == true)
     }
 
     func testJSONReportKeepsOneShapeAcrossInstances() throws {
