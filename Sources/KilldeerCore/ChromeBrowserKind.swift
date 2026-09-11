@@ -105,11 +105,30 @@ public enum ChromeBrowserKind: String, CaseIterable, Sendable {
     }
 
     public static func detect(executablePath: String) -> ChromeBrowserKind? {
-        if let match = bundleNames.first(where: { executablePath.contains($0.0) }) { return match.1 }
+        // Whole path components, not a substring search: `Google Chrome.app`
+        // appears inside `Not Google Chrome.app` and `Google Chrome.app-backup`
+        // too, and matching those would offer to kill an unrelated program.
+        //
+        // Walking from the root takes the outermost bundle, which is the
+        // browser. A helper's path nests its own `.app` inside the browser's.
+        for component in executablePath.split(separator: "/") where component.hasSuffix(".app") {
+            if let match = bundleNames.first(where: { $0.0 == component }) { return match.1 }
+        }
         // Puppeteer and Playwright download a bare `chrome-headless-shell` that
         // lives in a cache directory with no bundle around it.
         if URL(fileURLWithPath: executablePath).lastPathComponent == "chrome-headless-shell" {
             return .chromeForTesting
+        }
+        return nil
+    }
+
+    /// The outermost `.app` in a path, which is the browser's own bundle even
+    /// for a helper nested inside it.
+    static func appBundlePath(of executablePath: String) -> String? {
+        var bundle = ""
+        for component in executablePath.split(separator: "/") {
+            bundle += "/" + component
+            if component.hasSuffix(".app") { return bundle }
         }
         return nil
     }

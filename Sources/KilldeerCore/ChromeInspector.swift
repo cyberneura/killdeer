@@ -200,8 +200,8 @@ public struct ChromeInspector: Sendable {
                 return .browser(owner)
             }
         }
-        guard let bundle = Self.appBundlePath(of: helper.commandLine.executablePath) else { return .none }
-        let fromSameBundle = browsers.filter { Self.appBundlePath(of: $0.commandLine.executablePath) == bundle }
+        guard let bundle = ChromeBrowserKind.appBundlePath(of: helper.commandLine.executablePath) else { return .none }
+        let fromSameBundle = browsers.filter { ChromeBrowserKind.appBundlePath(of: $0.commandLine.executablePath) == bundle }
         switch fromSameBundle.count {
         case 0: return .none
         case 1: return .browser(fromSameBundle[0].identity.pid)
@@ -212,10 +212,6 @@ public struct ChromeInspector: Sendable {
         }
     }
 
-    private static func appBundlePath(of executablePath: String) -> String? {
-        guard let range = executablePath.range(of: ".app/", options: .backwards) else { return nil }
-        return String(executablePath[..<range.upperBound])
-    }
 
     private func resolvedUserDataDirectory(of commandLine: ChromeCommandLine) -> String? {
         commandLine.userDataDirectory

@@ -117,6 +117,23 @@ final class ChromeBrowserKindTests: XCTestCase {
         }
     }
 
+    /// A substring search would offer to kill an unrelated program whose bundle
+    /// merely contains a browser's name.
+    func testABundleNameMustBeAWholePathComponent() {
+        XCTAssertNil(ChromeBrowserKind.detect(executablePath: "/Applications/Not Google Chrome.app/Contents/MacOS/Electron"))
+        XCTAssertNil(ChromeBrowserKind.detect(executablePath: "/Users/me/Google Chrome.app-backup/Contents/MacOS/Google Chrome"))
+        XCTAssertNil(ChromeBrowserKind.detect(executablePath: "/Applications/Vivaldi.app.old/Contents/MacOS/Vivaldi"))
+        XCTAssertEqual(ChromeBrowserKind.detect(executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), .chrome)
+    }
+
+    /// A helper nests its own `.app` inside the browser's, and it is the
+    /// browser's that identifies which installation the process came from.
+    func testTheOutermostBundleIdentifiesAHelper() {
+        let helper = "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper"
+        XCTAssertEqual(ChromeBrowserKind.detect(executablePath: helper), .chrome)
+        XCTAssertEqual(ChromeBrowserKind.appBundlePath(of: helper), "/Applications/Google Chrome.app")
+    }
+
     func testDefaultDirectoryOnlyAppliesToBundledBrowsers() {
         XCTAssertEqual(
             ChromeBrowserKind.defaultUserDataDirectory(forExecutablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
