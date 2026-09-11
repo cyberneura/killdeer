@@ -63,6 +63,41 @@ private struct KilldeerMenu: View {
             .disabled(monitor.selected.isEmpty || monitor.isWorking)
         }
 
+        if !monitor.chromeInstances.isEmpty {
+            Divider()
+            Menu("Chrome Instances (\(monitor.chromeInstances.count))") {
+                // A submenu per instance rather than a flat list: the summary
+                // line is already long, and kill has to sit behind a second
+                // press so a mis-click cannot take down a browser full of tabs.
+                ForEach(monitor.chromeInstances, id: \.id) { instance in
+                    Menu(instance.menuSummary) {
+                        if let directory = instance.userDataDirectory {
+                            Text(directory)
+                        }
+                        if let launchedBy = instance.launchedBy {
+                            Text("Launched by \(launchedBy)")
+                        }
+                        if instance.isOrphaned {
+                            // One button per stray: the row groups helpers that
+                            // have nothing to do with each other beyond having
+                            // lost the same kind of browser.
+                            ForEach(instance.helpers, id: \.identity) { helper in
+                                Button("Kill PID \(helper.identity.pid) — \(helper.role.displayName)") {
+                                    monitor.killChromeProcess(helper)
+                                }
+                                .disabled(monitor.isWorking)
+                            }
+                        } else {
+                            Button("Kill \(instance.displayName)") {
+                                monitor.killChromeInstance(instance)
+                            }
+                            .disabled(monitor.isWorking)
+                        }
+                    }
+                }
+            }
+        }
+
         Menu("Clean Orphan Chrome…") {
             Text("Scans for disconnected Chrome helpers")
             Button("Scan and Terminate Orphans") {

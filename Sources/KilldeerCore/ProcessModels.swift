@@ -14,21 +14,29 @@ public struct ProcessSnapshot: Sendable {
     public let identity: ProcessIdentity
     public let parentPID: pid_t
     public let name: String
+    /// The file the kernel recorded as executed, which is not `arguments[0]`:
+    /// that is only what the parent chose to pass. Identification reads this.
+    public let executablePath: String
     public let arguments: [String]
     public let totalCPUTimeNanoseconds: UInt64
+    public let residentMemoryBytes: UInt64
 
     public init(
         identity: ProcessIdentity,
         parentPID: pid_t,
         name: String,
+        executablePath: String = "",
         arguments: [String],
-        totalCPUTimeNanoseconds: UInt64
+        totalCPUTimeNanoseconds: UInt64,
+        residentMemoryBytes: UInt64 = 0
     ) {
         self.identity = identity
         self.parentPID = parentPID
         self.name = name
+        self.executablePath = executablePath
         self.arguments = arguments
         self.totalCPUTimeNanoseconds = totalCPUTimeNanoseconds
+        self.residentMemoryBytes = residentMemoryBytes
     }
 }
 

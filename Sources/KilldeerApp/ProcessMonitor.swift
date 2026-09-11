@@ -10,14 +10,21 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var isScanning = false
     @Published private(set) var isWorking = false
     @Published private(set) var lastError: String?
+    /// Kept apart from `lastError`, which every poll resets. A process the user
+    /// asked to kill and which is still running has to stay on screen until
+    /// they do something about it, not until the next scan a few seconds later.
+    @Published private(set) var terminationError: String?
     @Published private(set) var cpuPercent: Double?
     @Published private(set) var temperatureCelsius: Double?
+    @Published private(set) var chromeInstances: [ChromeInstance] = []
 
     private let detector = ProcessDetector()
+    private let chromeInspector = ChromeInspector()
     private let temperatureReader = TemperatureReader()
     private var previousCPUTicks: CPUTicks?
     private let pollingInterval: TimeInterval
     private var pollingTask: Task<Void, Never>?
+    private var runningScan: Task<Void, Never>?
     private var knownRunawayPIDs: Set<pid_t> = []
 
     var hasRunaways: Bool { !findings.isEmpty }
@@ -38,6 +45,7 @@ final class ProcessMonitor: ObservableObject {
     var statusText: String {
         if isScanning { return "Scanning…" }
         if isWorking { return "Terminating processes…" }
+        if let terminationError { return "Kill failed: \(terminationError)" }
         if let lastError { return "Error: \(lastError)" }
         if findings.isEmpty { return "Idle — no runaway processes" }
         return "\(findings.count) runaway process\(findings.count == 1 ? "" : "es") detected"
@@ -68,6 +76,7 @@ final class ProcessMonitor: ObservableObject {
     }
 
     func scanNow() {
+        terminationError = nil
         Task { await scan() }
     }
 
@@ -88,18 +97,45 @@ final class ProcessMonitor: ObservableObject {
         guard !isWorking else { return }
         isWorking = true
         lastError = nil
+        terminationError = nil
         Task {
+            var failure: String?
             do {
                 let orphans = try await Task.detached { [detector] in
                     try detector.sample().filter(\.isOrphanChromeHelper)
                 }.value
                 try await terminateInBackground(orphans)
-                await scan()
             } catch {
-                lastError = error.localizedDescription
+                failure = error.localizedDescription
             }
+            // Cleared before the refresh, not after: scan returns early while a
+            // termination is in flight, so scanning first would leave the menu
+            // listing what was just killed until the next poll — long enough to
+            // press it again and be told the process no longer exists.
             isWorking = false
+            await refresh(reporting: failure)
         }
+    }
+
+    /// Signals only the browser process. Chrome shuts its own helpers down on
+    /// exit, and killing them first makes it report a crash on next launch.
+    ///
+    /// Takes no orphan row: those group unrelated strays under one heading, so
+    /// there is no single process that stands for the row. The menu offers
+    /// those one at a time through `killChromeProcess` instead.
+    func killChromeInstance(_ instance: ChromeInstance) {
+        guard let browser = instance.browser else { return }
+        killChromeProcess(browser)
+    }
+
+    func killChromeProcess(_ process: ChromeProcess) {
+        terminate([ProcessFinding(
+            process: process.snapshot,
+            cpuPercent: process.cpuPercent,
+            isOrphanChromeHelper: false,
+            score: 0,
+            reasons: []
+        )])
     }
 
     func openActivityMonitor() {
@@ -145,14 +181,41 @@ final class ProcessMonitor: ObservableObject {
         alert.runModal()
     }
 
+    private func refresh(reporting failure: String?) async {
+        await scan()
+        terminationError = failure
+    }
+
+    /// Scans are serialised rather than skipped.
+    ///
+    /// A periodic scan that took its snapshots before a kill is about to
+    /// publish what was just terminated. Turning the post-kill refresh away
+    /// because that one is still running would leave the menu offering a
+    /// process that no longer exists until the next poll.
     private func scan() async {
-        guard !isScanning, !isWorking else { return }
+        if let running = runningScan { await running.value }
+        guard !isWorking else { return }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performScan()
+        }
+        runningScan = task
+        await task.value
+        if runningScan == task { runningScan = nil }
+    }
+
+    private func performScan() async {
         isScanning = true
         lastError = nil
         do {
-            let sampled = try await Task.detached { [detector] in
-                try detector.sample().filter(\.isRunaway)
+            // One sample feeds both views. Sampling twice would double the
+            // one-second measurement window on every poll.
+            let result = try await Task.detached { [detector, chromeInspector] in
+                let all = try detector.sample()
+                return (runaways: all.filter(\.isRunaway), chrome: chromeInspector.instances(from: all))
             }.value
+            chromeInstances = result.chrome
+            let sampled = result.runaways
             let currentPIDs = Set(sampled.map { $0.process.identity.pid })
             let newPIDs = currentPIDs.subtracting(knownRunawayPIDs)
             findings = sampled
@@ -169,15 +232,20 @@ final class ProcessMonitor: ObservableObject {
         guard !targets.isEmpty, !isWorking else { return }
         isWorking = true
         lastError = nil
+        terminationError = nil
         Task {
+            var failure: String?
             do {
                 try await terminateInBackground(targets)
                 selected.removeAll()
-                await scan()
             } catch {
-                lastError = error.localizedDescription
+                failure = error.localizedDescription
             }
+            // See cleanOrphanChrome: the refresh has to happen with isWorking
+            // already cleared. A failure is refreshed too, since the usual
+            // reason to fail is that the process went away on its own.
             isWorking = false
+            await refresh(reporting: failure)
         }
     }
 
