@@ -31,8 +31,6 @@ public struct ChromeLocalState: Sendable {
     /// The profile the browser reopens when no `--profile-directory` is given.
     /// Absent in browsers that never wrote the key, such as Vivaldi.
     public let lastUsed: String?
-
-    var isEmpty: Bool { profiles.isEmpty && lastUsed == nil }
 }
 
 public final class ChromeProfileCatalog: @unchecked Sendable {
@@ -70,21 +68,24 @@ public final class ChromeProfileCatalog: @unchecked Sendable {
         if let cached = cache[directory], now().timeIntervalSince(cached.readAt) < cacheLifetime {
             return cached.state
         }
-        let parsed = Self.parse(fileContents(directory + "/Local State"))
         // Only a successful read is remembered, so a mid-write read does not
         // leave the menu bar app without a profile name until the entry would
         // have expired, when the next poll would have got it.
-        guard !parsed.isEmpty else { return nil }
+        guard let parsed = Self.parse(fileContents(directory + "/Local State")) else { return nil }
         cache[directory] = (parsed, now())
         return parsed
     }
 
-    static func parse(_ data: Data?) -> LocalState {
+    /// nil only when there was nothing to read or it did not parse. A file that
+    /// parsed but names no profiles is a successful read of a browser that has
+    /// not written any yet, and answering "unknown" for it would be as wrong as
+    /// answering "Default" for one that could not be read at all.
+    static func parse(_ data: Data?) -> LocalState? {
         guard let data,
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let profile = root["profile"] as? [String: Any]
-        else { return LocalState(profiles: [:], lastUsed: nil) }
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
 
+        let profile = root["profile"] as? [String: Any] ?? [:]
         let profiles = (profile["info_cache"] as? [String: Any] ?? [:]).reduce(into: [String: ChromeProfile]()) { result, entry in
             guard let attributes = entry.value as? [String: Any] else { return }
             let name = attributes["name"] as? String ?? entry.key

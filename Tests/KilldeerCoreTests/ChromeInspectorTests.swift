@@ -221,6 +221,19 @@ final class ChromeProfileCatalogTests: XCTestCase {
         let instance = inspector.instances(from: [browser]).first
         XCTAssertNil(instance?.profileDirectory)
         XCTAssertEqual(instance?.profileDescription, "profile unknown")
+
+        // The mirror case: a file that read cleanly but names nothing does get
+        // the Default fallback.
+        let fresh = ChromeInspector(catalog: ChromeProfileCatalog { _ in Data("{\"profile\":{}}".utf8) })
+        XCTAssertEqual(fresh.instances(from: [browser]).first?.profileDirectory, "Default")
+    }
+
+    /// A browser that has not written its profiles yet has still been read
+    /// successfully, and Default is the right answer for it.
+    func testAValidFileNamingNoProfilesIsStillASuccessfulRead() {
+        let catalog = ChromeProfileCatalog { _ in Data("{\"profile\":{}}".utf8) }
+        XCTAssertNotNil(catalog.localState(inUserDataDirectory: "/tmp/x"))
+        XCTAssertNotNil(ChromeProfileCatalog { _ in Data("{}".utf8) }.localState(inUserDataDirectory: "/tmp/x"))
     }
 
     func testUnreadableOrTruncatedLocalStateIsTolerated() {
