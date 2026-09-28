@@ -137,6 +137,12 @@ private struct KilldeerMenu: View {
             monitor.showSettingsPlaceholder()
         }
 
+        // Killdeer's menu has no About item to sit under, so this goes with
+        // the other app-level entries just above Quit.
+        Button("Third-Party Licenses…") {
+            LicenseWindow.show()
+        }
+
         Button("Quit") {
             NSApplication.shared.terminate(nil)
         }

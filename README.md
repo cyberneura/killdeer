@@ -123,3 +123,21 @@ Termination is deliberately two-stage: `SIGTERM`, a three-second grace period, t
 CPU usage is computed from two `PROC_PIDTASKINFO` snapshots. Reaching the configured threshold contributes 50 points. A Chrome helper whose parent is missing or whose ancestry no longer reaches the main Google Chrome process contributes 40 points; active CPU use adds another 20. A score of 50 or greater is reported by `scan`.
 
 Orphan status alone is intentionally below the runaway threshold to avoid false alarms, but `clean-chrome` lists and cleans all disconnected Chrome helpers because that command is an explicit user action.
+
+## License
+
+Killdeer is released under the [MIT License](LICENSE).
+
+## Third-party licenses
+
+[THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) lists the open source libraries Killdeer bundles. At present there are none: Killdeer has no package dependencies and links only Apple system frameworks, which are part of macOS.
+
+The same text, preceded by Killdeer's own license, is compiled into both executables. Read it with `killdeer --license`, or from **Third-Party Licenses…** in the menu bar app's menu.
+
+The file is generated, together with `Sources/KilldeerCore/Licenses.swift` which embeds it. After adding a dependency or changing `LICENSE`, run
+
+```sh
+scripts/generate-third-party-notices.sh
+```
+
+and commit both files. The release workflow runs it with `--check` and fails if either is stale.

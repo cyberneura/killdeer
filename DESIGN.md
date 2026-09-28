@@ -73,6 +73,15 @@ cyberneura
 - **CPU 使用率**: `host_statistics(HOST_CPU_LOAD_INFO)` の累積 tick 差分。公開 API
 - **参照実装**: exelban/Stats (Swift) or lablup/all-smi (Rust, IOReport+SMC, sudoless)
 - **macsmc crate は使わない** — 最終更新 2020-07、Apple Silicon 発売前
+- **ライセンス表示**: `LICENSE` (MIT) と `THIRD-PARTY-NOTICES.txt` を、生成した
+  `Sources/KilldeerCore/Licenses.swift` でバイナリに埋め込み、`killdeer --license` と
+  メニューの Third-Party Licenses… で出す。**依存を足す・上げる時、`LICENSE` を変える時は
+  `scripts/generate-third-party-notices.sh` を流し直して 2 ファイルともコミットする**
+  (release.yml の test job が `--check` で古さを検出し、テストが埋め込みとファイルの一致を見る)。
+  現状は依存ゼロなので「同梱ライブラリ無し」の定型文を書く。スクリプトはパッケージ依存か
+  binary target があると止まる (`swift package dump-package` で判定。swift の無い環境では
+  `Package.swift` の文字列検索で代用する) ので、依存を足したら
+  `Package.resolved` の pins と `.build/checkouts/*/LICENSE*` を読むよう拡張すること
 
 ## 進め方
 1. まず小さな CLI で「孤児 Chrome の検出と一括 kill」だけを作り、どのくらいの頻度で当たるか実測する
