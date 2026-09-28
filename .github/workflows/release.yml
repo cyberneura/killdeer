@@ -154,6 +154,12 @@ jobs:
       - name: Show the toolchain
         run: swift --version
 
+      # Stale if a dependency or LICENSE changed without regenerating; the
+      # tests only compare the embedded copy with the committed files, so this
+      # is what notices the committed files themselves falling behind.
+      - name: Check third-party notices are up to date
+        run: scripts/generate-third-party-notices.sh --check
+
       - name: Run tests
         run: swift test
 

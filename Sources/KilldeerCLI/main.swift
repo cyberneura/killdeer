@@ -9,6 +9,7 @@ private func usage() {
       killdeer clean-chrome [--yes] [--cpu PERCENT] [--interval SECONDS]
       killdeer chrome [--all] [--json] [--probe] [--interval SECONDS]
       killdeer chrome kill PID [--yes]
+      killdeer --license
 
     scan          Show runaway findings (or every sampled process with --all).
     kill          Terminate selected PIDs (SIGTERM, then SIGKILL after 3 seconds).
@@ -17,6 +18,7 @@ private func usage() {
                   headless state, debugging port and who launched them.
                   --all adds a line per helper, --probe checks the debugging
                   port answers, and `chrome kill PID` takes down one instance.
+    --license     Print Killdeer's license and the third-party notices.
     """)
 }
 
@@ -212,6 +214,10 @@ do {
         } else {
             renderChrome(instances, showHelpers: arguments.contains("--all"), probe: arguments.contains("--probe"))
         }
+    case "--license":
+        // Killdeer's own MIT text first, then the notices for what it bundles.
+        print(Licenses.license)
+        print(Licenses.thirdPartyNotices, terminator: "")
     case "help", "--help", "-h": usage()
     default: usage(); exit(2)
     }
