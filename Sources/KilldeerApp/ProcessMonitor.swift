@@ -17,6 +17,8 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var cpuPercent: Double?
     @Published private(set) var temperatureCelsius: Double?
     @Published private(set) var chromeInstances: [ChromeInstance] = []
+    /// The busiest processes of the last scan, runaway or not.
+    @Published private(set) var topProcesses: [ProcessFinding] = []
 
     private let detector = ProcessDetector()
     private let chromeInspector = ChromeInspector()
@@ -28,6 +30,18 @@ final class ProcessMonitor: ObservableObject {
     private var knownRunawayPIDs: Set<pid_t> = []
 
     var hasRunaways: Bool { !findings.isEmpty }
+
+    /// How full the meter beside the menu bar bird is, from 0 to
+    /// `CPUMeter.steps`.
+    var cpuMeterLevel: Int { CPUMeter.level(forPercent: cpuPercent) }
+
+    /// Spoken for the menu bar item. The meter is drawn, so without the figure
+    /// here VoiceOver would announce the bird and nothing of what it shows.
+    var accessibilityLabel: String {
+        var label = hasRunaways ? "Killdeer warning" : "Killdeer"
+        if let cpuPercent { label += String(format: ", CPU %.0f%%", cpuPercent) }
+        return label
+    }
 
     /// The system line under the status.
     ///
@@ -128,6 +142,10 @@ final class ProcessMonitor: ObservableObject {
         killChromeProcess(browser)
     }
 
+    func killProcess(_ finding: ProcessFinding) {
+        terminate([finding])
+    }
+
     func killChromeProcess(_ process: ChromeProcess) {
         terminate([ProcessFinding(
             process: process.snapshot,
@@ -208,13 +226,18 @@ final class ProcessMonitor: ObservableObject {
         isScanning = true
         lastError = nil
         do {
-            // One sample feeds both views. Sampling twice would double the
-            // one-second measurement window on every poll.
+            // One sample feeds every view. Sampling again would add another
+            // one-second measurement window to every poll.
             let result = try await Task.detached { [detector, chromeInspector] in
                 let all = try detector.sample()
-                return (runaways: all.filter(\.isRunaway), chrome: chromeInspector.instances(from: all))
+                return (
+                    runaways: all.filter(\.isRunaway),
+                    top: TopProcesses.select(from: all),
+                    chrome: chromeInspector.instances(from: all)
+                )
             }.value
             chromeInstances = result.chrome
+            topProcesses = result.top
             let sampled = result.runaways
             let currentPIDs = Set(sampled.map { $0.process.identity.pid })
             let newPIDs = currentPIDs.subtracting(knownRunawayPIDs)

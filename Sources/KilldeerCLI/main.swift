@@ -5,6 +5,7 @@ private func usage() {
     print("""
     Usage:
       killdeer scan [--cpu PERCENT] [--interval SECONDS] [--all]
+      killdeer top [--limit N] [--interval SECONDS]
       killdeer kill PID [PID ...]
       killdeer clean-chrome [--yes] [--cpu PERCENT] [--interval SECONDS]
       killdeer chrome [--all] [--json] [--probe] [--interval SECONDS]
@@ -12,6 +13,8 @@ private func usage() {
       killdeer --license
 
     scan          Show runaway findings (or every sampled process with --all).
+    top           Show the busiest processes of any kind, runaway or not
+                  (5 by default, those under 1% CPU left out).
     kill          Terminate selected PIDs (SIGTERM, then SIGKILL after 3 seconds).
     clean-chrome  Terminate every disconnected Chrome Helper; prompts unless --yes.
     chrome        List running Chromium-family browsers by instance: profile,
@@ -154,6 +157,18 @@ do {
     case "scan":
         let findings = try ProcessDetector(configuration: configuration(arguments)).sample()
         render(arguments.contains("--all") ? findings : findings.filter(\.isRunaway))
+    case "top":
+        // Parsed as an Int directly: going through value(after:) would accept
+        // "inf" or "nan", and converting either to Int traps.
+        var limit = 5
+        if let index = arguments.firstIndex(of: "--limit") {
+            guard arguments.indices.contains(index + 1), let parsed = Int(arguments[index + 1]), parsed > 0 else {
+                usage(); exit(2)
+            }
+            limit = parsed
+        }
+        let findings = try ProcessDetector(configuration: configuration(arguments)).sample()
+        render(TopProcesses.select(from: findings, limit: limit))
     case "kill":
         let enumerator = ProcessEnumerator()
         let requested = Set(arguments.dropFirst().compactMap(Int32.init))
