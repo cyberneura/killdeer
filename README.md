@@ -1,6 +1,6 @@
 # Killdeer
 
-Killdeer finds CPU-heavy processes and disconnected Google Chrome helpers on macOS 14+. It ships as a menu bar app and a command-line tool over the same `KilldeerCore` Swift package library.
+Killdeer finds CPU-heavy processes and disconnected Google Chrome helpers on macOS 14+, and doubles as a general load monitor: the menu bar shows how busy the CPU is and which processes are keeping it busy. It ships as a menu bar app and a command-line tool over the same `KilldeerCore` Swift package library.
 
 ## Installation
 
@@ -14,9 +14,9 @@ Or build from source (see below).
 
 ## Menu bar app
 
-Open Killdeer from Spotlight or Launchpad. It has no Dock icon and no window; the bird in the menu bar is the whole interface, and it turns red when something is running away.
+Open Killdeer from Spotlight or Launchpad. It has no Dock icon and no window; the bird in the menu bar is the whole interface, and it turns red when something is running away. Beside the bird a small upright meter fills with the system's CPU use, in steps of ten percent, so the load is visible without opening the menu.
 
-The menu carries the system's CPU use and a temperature, the scan and cleanup actions, a **Chrome Instances** submenu holding the same per-instance summary the `chrome` command prints with a kill behind a second press, and a way into Activity Monitor when you want more than Killdeer shows. The temperature is the hottest of the SoC die sensors, or, on a machine that exposes none, the hottest sensor it does offer — which may be the SSD or the battery rather than the chip. It comes from the HID sensors macOS publishes without any special permission; that is not a public interface, so hardware offering nothing readable drops the temperature and leaves the CPU figure in place.
+The menu carries the system's CPU use and a temperature, a **Top Processes** list of the busiest processes of any kind (runaway or not, Chrome or not; up to five, those under 1% left out) with a kill behind a second press on each, the scan and cleanup actions, a **Chrome Instances** submenu holding the same per-instance summary the `chrome` command prints with a kill behind a second press, and a way into Activity Monitor when you want more than Killdeer shows. The temperature is the hottest of the SoC die sensors, or, on a machine that exposes none, the hottest sensor it does offer — which may be the SSD or the battery rather than the chip. It comes from the HID sensors macOS publishes without any special permission; that is not a public interface, so hardware offering nothing readable drops the temperature and leaves the CPU figure in place.
 
 **Start at Login** in that menu registers the app with macOS through `SMAppService`. The registration belongs to the system rather than to Killdeer, so it can also be revoked in System Settings > General > Login Items; the menu reads the state back from macOS and follows it.
 
@@ -46,6 +46,10 @@ killdeer scan
 
 # Show all sampled processes
 killdeer scan --all
+
+# Show the busiest processes, whatever they are (top 5 by default)
+killdeer top
+killdeer top --limit 10
 
 # Customize CPU threshold and sampling interval
 killdeer scan --cpu 50 --interval 2
@@ -121,6 +125,8 @@ Termination is deliberately two-stage: `SIGTERM`, a three-second grace period, t
 ## Detection model
 
 CPU usage is computed from two `PROC_PIDTASKINFO` snapshots. Reaching the configured threshold contributes 50 points. A Chrome helper whose parent is missing or whose ancestry no longer reaches the main Google Chrome process contributes 40 points; active CPU use adds another 20. A score of 50 or greater is reported by `scan`.
+
+`top` and the menu's **Top Processes** list skip this scoring: they rank by CPU alone, so they show a busy machine's culprits before any of them counts as a runaway. Both list only processes Killdeer can read, which without elevated privileges means those owned by the same user; system daemons such as `WindowServer` or `kernel_task` do not appear, though their load still shows in the overall CPU figure and the meter.
 
 Orphan status alone is intentionally below the runaway threshold to avoid false alarms, but `clean-chrome` lists and cleans all disconnected Chrome helpers because that command is an explicit user action.
 

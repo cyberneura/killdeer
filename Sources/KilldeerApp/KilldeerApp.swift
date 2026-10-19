@@ -1,4 +1,5 @@
 import AppKit
+import KilldeerCore
 import SwiftUI
 
 @main
@@ -6,23 +7,33 @@ struct KilldeerApp: App {
     @StateObject private var monitor = ProcessMonitor()
     @StateObject private var loginItem = LoginItemController()
 
-    // Built once. The label is rebuilt on every published change from the
-    // monitor, and rasterising the glyph each time would redraw it several
-    // times a minute for an image that never changes.
-    private static let restingIcon = KilldeerBird.menuBarImage(tint: nil)
-    private static let warningIcon = KilldeerBird.menuBarImage(tint: .systemRed)
+    // Built once, one image per meter level and state. The label is rebuilt
+    // on every published change from the monitor, and rasterising the glyph
+    // each time would redraw it several times a minute; with the meter
+    // quantised to CPUMeter.steps there are only a couple of dozen images it
+    // can ever be.
+    private static let restingIcons = icons(tint: nil)
+    private static let warningIcons = icons(tint: .systemRed)
+
+    private static func icons(tint: NSColor?) -> [NSImage] {
+        (0...CPUMeter.steps).map {
+            KilldeerBird.menuBarImage(tint: tint, meter: (level: $0, steps: CPUMeter.steps))
+        }
+    }
 
     var body: some Scene {
         MenuBarExtra {
             KilldeerMenu(monitor: monitor, loginItem: loginItem)
         } label: {
-            // Colour is the whole signal, as DESIGN.md asks for: the bird stays
-            // the bird and turns red. Swapping in a warning triangle would put
-            // a second, unrelated shape in the menu bar for the state that
-            // matters most, which is the worst moment to make someone re-read
-            // the icon.
-            Image(nsImage: monitor.hasRunaways ? Self.warningIcon : Self.restingIcon)
-                .accessibilityLabel(monitor.hasRunaways ? "Killdeer warning" : "Killdeer")
+            // Colour is the warning signal, as DESIGN.md asks for: the bird
+            // stays the bird and turns red. Swapping in a warning triangle
+            // would put a second, unrelated shape in the menu bar for the state
+            // that matters most, which is the worst moment to make someone
+            // re-read the icon. The meter beside it is always there and only
+            // ever changes how full it is.
+            let icons = monitor.hasRunaways ? Self.warningIcons : Self.restingIcons
+            Image(nsImage: icons[monitor.cpuMeterLevel])
+                .accessibilityLabel(monitor.accessibilityLabel)
         }
         .menuBarExtraStyle(.menu)
     }
@@ -61,6 +72,27 @@ private struct KilldeerMenu: View {
                 }
             }
             .disabled(monitor.selected.isEmpty || monitor.isWorking)
+        }
+
+        if !monitor.topProcesses.isEmpty {
+            Divider()
+            Text("Top Processes")
+            // Every process, not only Chrome and not only runaways: this is
+            // the answer to "what is using the CPU" before anything crosses
+            // the runaway line. Kill sits one level down, as it does for the
+            // Chrome instances, so reading the list cannot end a process.
+            ForEach(monitor.topProcesses, id: \.process.identity) { finding in
+                Menu("\(finding.process.name) — \(finding.cpuPercent, specifier: "%.1f")% CPU") {
+                    Text("PID \(finding.process.identity.pid)")
+                    if !finding.process.executablePath.isEmpty {
+                        Text(finding.process.executablePath)
+                    }
+                    Button("Kill PID \(finding.process.identity.pid)") {
+                        monitor.killProcess(finding)
+                    }
+                    .disabled(monitor.isWorking)
+                }
+            }
         }
 
         if !monitor.chromeInstances.isEmpty {

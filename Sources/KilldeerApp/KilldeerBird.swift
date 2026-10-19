@@ -74,13 +74,53 @@ extension KilldeerBird {
     /// Drawn into a flipped context because `Shape.path(in:)` measures down
     /// from the top and an `NSImage` measures up from the bottom; without it
     /// the bird is upside down.
-    static func menuBarImage(tint: NSColor?, height: CGFloat = 18) -> NSImage {
-        let width = (height * design.width / design.height).rounded()
-        let image = NSImage(size: NSSize(width: width, height: height), flipped: true) { rect in
+    ///
+    /// With `meter`, a CPU meter stands beside the glyph: a thin upright gauge
+    /// to the bird's right, filled from the bottom by `level` of `steps`.
+    ///
+    /// The gauge is drawn even when empty, so the status item keeps one width
+    /// from launch onwards; a meter that appeared with the first CPU reading
+    /// would nudge every item to its left a few seconds after login.
+    ///
+    /// It takes the same tint as the bird. The red still means "something is
+    /// running away" and is still the only colour in the item; the meter says
+    /// how busy the machine is, which is a different question and is answered
+    /// by shape rather than colour.
+    static func menuBarImage(
+        tint: NSColor?,
+        meter: (level: Int, steps: Int)? = nil,
+        height: CGFloat = 18
+    ) -> NSImage {
+        let birdWidth = (height * design.width / design.height).rounded()
+        let gap: CGFloat = meter == nil ? 0 : 2
+        let meterWidth: CGFloat = meter == nil ? 0 : 5
+        let size = NSSize(width: birdWidth + gap + meterWidth, height: height)
+        let image = NSImage(size: size, flipped: true) { _ in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            context.addPath(KilldeerBird().path(in: rect).cgPath)
-            (tint ?? .black).setFill()
+            let colour = tint ?? .black
+            context.addPath(KilldeerBird().path(in: CGRect(x: 0, y: 0, width: birdWidth, height: height)).cgPath)
+            colour.setFill()
             context.fillPath()
+
+            if let meter {
+                // Inset vertically to roughly the bird's own height, so the
+                // gauge does not stand taller than the glyph beside it.
+                let frame = CGRect(x: birdWidth + gap, y: 2, width: meterWidth, height: height - 4)
+                colour.setStroke()
+                context.setLineWidth(1)
+                // Stroked half a point inside so the 1pt line lands on whole
+                // pixels at 1x instead of blurring across two.
+                context.addPath(CGPath(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
+                                       cornerWidth: 1.5, cornerHeight: 1.5, transform: nil))
+                context.strokePath()
+
+                let inner = frame.insetBy(dx: 1.5, dy: 1.5)
+                let steps = max(1, meter.steps)
+                let level = min(max(0, meter.level), steps)
+                let filled = inner.height * CGFloat(level) / CGFloat(steps)
+                // Flipped context: the bottom of the gauge is the largest y.
+                context.fill(CGRect(x: inner.minX, y: inner.maxY - filled, width: inner.width, height: filled))
+            }
             return true
         }
         image.isTemplate = tint == nil
