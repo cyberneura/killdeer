@@ -4,35 +4,46 @@ import SwiftUI
 
 @main
 struct KilldeerApp: App {
-    @StateObject private var monitor = ProcessMonitor()
+    @StateObject private var monitor: ProcessMonitor
     @StateObject private var loginItem = LoginItemController()
+    @StateObject private var settings: MeterSettings
+    @StateObject private var flap: FlapClock
 
-    // Built once, one image per meter level and state. The label is rebuilt
-    // on every published change from the monitor, and rasterising the glyph
-    // each time would redraw it several times a minute; with the meter
-    // quantised to CPUMeter.steps there are only a couple of dozen images it
-    // can ever be.
-    private static let restingIcons = icons(tint: nil)
-    private static let warningIcons = icons(tint: .systemRed)
+    // The pictures already drawn, by what they show. The label is rebuilt on
+    // every published change from the monitor, and rasterising the glyph each
+    // time would redraw it several times a minute; drawn from the quantised
+    // level there are only a few dozen pictures a style can ever be.
+    @MainActor private static let images = MeterImageCache()
 
-    private static func icons(tint: NSColor?) -> [NSImage] {
-        (0...CPUMeter.steps).map {
-            KilldeerBird.menuBarImage(tint: tint, meter: (level: $0, steps: CPUMeter.steps))
-        }
+    init() {
+        // The clock follows the monitor and the settings, so the three are
+        // made together; StateObject keeps the first set for the life of the
+        // scene.
+        let monitor = ProcessMonitor()
+        let settings = MeterSettings()
+        _monitor = StateObject(wrappedValue: monitor)
+        _settings = StateObject(wrappedValue: settings)
+        _flap = StateObject(wrappedValue: FlapClock(monitor: monitor, settings: settings))
     }
 
     var body: some Scene {
         MenuBarExtra {
-            KilldeerMenu(monitor: monitor, loginItem: loginItem)
+            KilldeerMenu(monitor: monitor, loginItem: loginItem, settings: settings)
         } label: {
-            // Colour is the warning signal, as DESIGN.md asks for: the bird
-            // stays the bird and turns red. Swapping in a warning triangle
-            // would put a second, unrelated shape in the menu bar for the state
-            // that matters most, which is the worst moment to make someone
-            // re-read the icon. The meter beside it is always there and only
-            // ever changes how full it is.
-            let icons = monitor.hasRunaways ? Self.warningIcons : Self.restingIcons
-            Image(nsImage: icons[monitor.cpuMeterLevel])
+            // Colour is the warning signal, as DESIGN.md asks for: whatever
+            // the style, the picture stays itself and turns red. Swapping in a
+            // warning triangle would put a second, unrelated shape in the menu
+            // bar for the state that matters most, which is the worst moment
+            // to make someone re-read the icon. The load is the picture's
+            // shape, and only ever changes how full it is.
+            let frame = MeterFrame(
+                style: settings.style,
+                level: monitor.cpuMeterLevel,
+                coreLevels: settings.style.usesCores ? monitor.coreLevels : [],
+                flapFrame: settings.style.isAnimated ? flap.frame : 0,
+                warning: monitor.hasRunaways
+            )
+            Image(nsImage: Self.images.image(for: frame))
                 .accessibilityLabel(monitor.accessibilityLabel)
         }
         .menuBarExtraStyle(.menu)
@@ -42,6 +53,7 @@ struct KilldeerApp: App {
 private struct KilldeerMenu: View {
     @ObservedObject var monitor: ProcessMonitor
     @ObservedObject var loginItem: LoginItemController
+    @ObservedObject var settings: MeterSettings
 
     var body: some View {
         Text(monitor.statusText)
@@ -165,8 +177,21 @@ private struct KilldeerMenu: View {
             monitor.openActivityMonitor()
         }
 
+        // The style here as well as in the settings window: switching is the
+        // one setting that is tried a few times before it settles, and the
+        // menu is where the result is.
+        Menu("Menu Bar Style") {
+            ForEach(MeterStyle.allCases, id: \.self) { style in
+                Button {
+                    settings.style = style
+                } label: {
+                    Text("\(settings.style == style ? "✓" : "  ") \(style.displayName)")
+                }
+            }
+        }
+
         Button("Settings…") {
-            monitor.showSettingsPlaceholder()
+            SettingsWindow.show(settings: settings, monitor: monitor)
         }
 
         // Killdeer's menu has no About item to sit under, so this goes with

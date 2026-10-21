@@ -15,6 +15,11 @@ final class ProcessMonitor: ObservableObject {
     /// they do something about it, not until the next scan a few seconds later.
     @Published private(set) var terminationError: String?
     @Published private(set) var cpuPercent: Double?
+    /// The use of each core, in core order. Starts as one idle reading per
+    /// core rather than empty, so that the per-core styles are drawn at their
+    /// full width from launch instead of growing with the first sample.
+    @Published private(set) var corePercents: [Double] =
+        Array(repeating: 0, count: ProcessInfo.processInfo.activeProcessorCount)
     @Published private(set) var temperatureCelsius: Double?
     @Published private(set) var chromeInstances: [ChromeInstance] = []
     /// The busiest processes of the last scan, runaway or not.
@@ -24,7 +29,8 @@ final class ProcessMonitor: ObservableObject {
     private let chromeInspector = ChromeInspector()
     private let temperatureReader = TemperatureReader()
     private var previousCPUTicks: CPUTicks?
-    private let pollingInterval: TimeInterval
+    private var previousCoreTicks: [CPUTicks]?
+    let pollingInterval: TimeInterval
     private var pollingTask: Task<Void, Never>?
     private var runningScan: Task<Void, Never>?
     private var knownRunawayPIDs: Set<pid_t> = []
@@ -34,6 +40,9 @@ final class ProcessMonitor: ObservableObject {
     /// How full the meter beside the menu bar bird is, from 0 to
     /// `CPUMeter.steps`.
     var cpuMeterLevel: Int { CPUMeter.level(forPercent: cpuPercent) }
+
+    /// One level per bar or tile for the per-core styles.
+    var coreLevels: [Int] { CoreMeter.levels(forPercents: corePercents) }
 
     /// Spoken for the menu bar item. The meter is drawn, so without the figure
     /// here VoiceOver would announce the bird and nothing of what it shows.
@@ -177,7 +186,7 @@ final class ProcessMonitor: ObservableObject {
     private func refreshSystemStats() async {
         let reader = temperatureReader
         let sample = await Task.detached {
-            (ticks: CPULoad.sample(), readings: reader.readings())
+            (ticks: CPULoad.sample(), cores: CPULoad.sampleCores(), readings: reader.readings())
         }.value
 
         if let ticks = sample.ticks {
@@ -188,15 +197,14 @@ final class ProcessMonitor: ObservableObject {
             }
             previousCPUTicks = ticks
         }
+        if let cores = sample.cores {
+            if let previous = previousCoreTicks,
+               let percents = CPULoad.corePercentages(from: previous, to: cores) {
+                corePercents = percents
+            }
+            previousCoreTicks = cores
+        }
         temperatureCelsius = TemperatureSelection.representative(from: sample.readings)
-    }
-
-    func showSettingsPlaceholder() {
-        let alert = NSAlert()
-        alert.messageText = "Killdeer Settings"
-        alert.informativeText = "Threshold and exclusion settings are planned for a future release. The polling interval is currently \(pollingInterval.formatted()) seconds."
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
     }
 
     private func refresh(reporting failure: String?) async {
