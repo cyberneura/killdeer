@@ -16,8 +16,22 @@ import SwiftUI
 /// is a little over a point across and reads as a speck of noise rather than as
 /// an eye.
 struct KilldeerBird: Shape {
+    /// Which beat of the wing to draw, 0 to `FlapRate.frames - 1`, for the
+    /// flapping style; nil draws the bird as the icon has it, with no wing.
+    /// The wing is not in the icon: it is an addition for the animation, an
+    /// ellipse hinged at the top of the back and swung up and down.
+    var wingFrame: Int? = nil
+
+    /// The wing's angle for each beat, in degrees. The coordinates grow
+    /// downwards, so a positive angle swings the tip, which points left from
+    /// the hinge, upwards. Up, halfway, down, halfway: the two halfway
+    /// pictures are the same, which makes the beat read as one motion.
+    private static let wingAngles: [Double] = [40, 18, -4, 18]
+    private static let wingHinge = CGPoint(x: 300, y: 244)
+    private static let wingRect = CGRect(x: 190, y: 226, width: 110, height: 36)
+
     /// The glyph in the icon's own coordinates, before it is fitted to a rect.
-    private static func glyph() -> Path {
+    private static func glyph(wingFrame: Int? = nil) -> Path {
         var path = Path()
 
         path.move(to: CGPoint(x: 180.6, y: 309.9))
@@ -38,10 +52,21 @@ struct KilldeerBird: Shape {
         path.addRoundedRect(in: CGRect(x: 267, y: 334, width: 12, height: 44),
                             cornerSize: CGSize(width: 6, height: 6))
 
+        if let wingFrame {
+            let angle = wingAngles[((wingFrame % wingAngles.count) + wingAngles.count) % wingAngles.count]
+            let swing = CGAffineTransform(translationX: wingHinge.x, y: wingHinge.y)
+                .rotated(by: angle * .pi / 180)
+                .translatedBy(x: -wingHinge.x, y: -wingHinge.y)
+            // A rotation keeps the ellipse winding the same way as the rest,
+            // which the union under the non-zero rule depends on.
+            path.addEllipse(in: wingRect, transform: swing)
+        }
+
         return path
     }
 
-    /// The glyph's bounding box, measured from the glyph rather than written
+    /// The glyph's bounding box, without the wing so that the bird does not
+    /// shift between beats, measured from the glyph rather than written
     /// out beside it. Written out, it would go stale the first time one of the
     /// coordinates above moved, and the bird would sit off-centre in its frame
     /// with nothing failing to say so.
@@ -54,7 +79,7 @@ struct KilldeerBird: Shape {
         let fit = CGAffineTransform(translationX: rect.midX - width / 2, y: rect.midY - height / 2)
             .scaledBy(x: scale, y: scale)
             .translatedBy(x: -design.minX, y: -design.minY)
-        return Self.glyph().applying(fit)
+        return Self.glyph(wingFrame: wingFrame).applying(fit)
     }
 }
 
@@ -86,10 +111,14 @@ extension KilldeerBird {
     /// running away" and is still the only colour in the item; the meter says
     /// how busy the machine is, which is a different question and is answered
     /// by shape rather than colour.
+    ///
+    /// With `wingFrame`, the bird has a wing at that beat of `FlapRate`; the
+    /// flapping style gives it no meter, the beat being the meter.
     static func menuBarImage(
         tint: NSColor?,
         meter: (level: Int, steps: Int)? = nil,
-        height: CGFloat = 18
+        height: CGFloat = 18,
+        wingFrame: Int? = nil
     ) -> NSImage {
         let birdWidth = (height * design.width / design.height).rounded()
         let gap: CGFloat = meter == nil ? 0 : 2
@@ -98,7 +127,8 @@ extension KilldeerBird {
         let image = NSImage(size: size, flipped: true) { _ in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             let colour = tint ?? .black
-            context.addPath(KilldeerBird().path(in: CGRect(x: 0, y: 0, width: birdWidth, height: height)).cgPath)
+            context.addPath(KilldeerBird(wingFrame: wingFrame)
+                .path(in: CGRect(x: 0, y: 0, width: birdWidth, height: height)).cgPath)
             colour.setFill()
             context.fillPath()
 

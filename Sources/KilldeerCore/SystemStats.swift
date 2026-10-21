@@ -85,6 +85,44 @@ public enum CPULoad {
         return min(100, busy / total * 100)
     }
 
+    /// The use of each core between two snapshots, in core order, or nil when
+    /// the snapshots do not describe the same cores. A core that saw no time
+    /// pass reads as idle rather than dropping out and shifting the ones after
+    /// it along.
+    public static func corePercentages(from first: [CPUTicks], to second: [CPUTicks]) -> [Double]? {
+        guard first.count == second.count, !first.isEmpty else { return nil }
+        return zip(first, second).map { percentage(from: $0, to: $1) ?? 0 }
+    }
+
+    /// The counters of each core as the kernel has them now, in core order.
+    public static func sampleCores() -> [CPUTicks]? {
+        let host = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, host) }
+
+        var count: natural_t = 0
+        var info: processor_info_array_t?
+        var infoCount: mach_msg_type_number_t = 0
+        let result = host_processor_info(host, PROCESSOR_CPU_LOAD_INFO, &count, &info, &infoCount)
+        guard result == KERN_SUCCESS, let info else { return nil }
+        // The array is the kernel's, mapped into this task, and is freed with
+        // vm_deallocate rather than free(); once a poll for the life of the app,
+        // so a leak here would be a slow one.
+        defer {
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info),
+                          vm_size_t(infoCount) * vm_size_t(MemoryLayout<integer_t>.stride))
+        }
+        let states = Int(CPU_STATE_MAX)
+        guard Int(infoCount) >= Int(count) * states else { return nil }
+        return (0..<Int(count)).map { core in
+            let base = core * states
+            let user = Double(info[base + Int(CPU_STATE_USER)])
+            let system = Double(info[base + Int(CPU_STATE_SYSTEM)])
+            let idle = Double(info[base + Int(CPU_STATE_IDLE)])
+            let nice = Double(info[base + Int(CPU_STATE_NICE)])
+            return CPUTicks(busy: user + system + nice, total: user + system + nice + idle)
+        }
+    }
+
     /// The counters as the kernel has them now.
     public static func sample() -> CPUTicks? {
         // mach_host_self hands back a send right the caller owns, and this runs
