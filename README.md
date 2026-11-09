@@ -2,6 +2,8 @@
 
 Killdeer finds CPU-heavy processes and disconnected Google Chrome helpers on macOS 14+, and doubles as a general load monitor: the menu bar shows how busy the CPU is and which processes are keeping it busy. It ships as a menu bar app and a command-line tool over the same `KilldeerCore` Swift package library.
 
+Website: https://www.cyberneura.com/app/killdeer
+
 ## Installation
 
 ```sh
