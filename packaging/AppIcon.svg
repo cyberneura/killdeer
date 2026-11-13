@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  The master the .icns is generated from. scripts/make-icon.sh renders it to
-  packaging/AppIcon.png, and scripts/make-app.sh sips that png into every icns
-  slot. The master is 1024, so the 512x512@2x slot is a straight copy of it and
-  every other slot is a downscale.
+  The master the app icon is generated from. scripts/make-icon.sh renders it to
+  packaging/AppIcon.png, and scripts/generate-macos-icons.sh lays that png out
+  per size into packaging/icons/{icon.icns,Assets.car}
+  (see resources/app-icons/README.md).
 
   Original artwork: a plover at rest, bill to the right, fan tail to the left.
   Nothing here is traced from an icon set or a system symbol, so the app carries

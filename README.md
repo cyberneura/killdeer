@@ -34,7 +34,7 @@ scripts/make-dmg.sh             # dist/Killdeer_<version>_universal.dmg
 
 `make-app.sh` is what produces a fully working app: `SMAppService` and notifications both need a real bundle, and `swift run killdeer-app` only approximates one. `LSUIElement` is the part that does survive a bare executable, through the `Info.plist` linked into it (see `Package.swift`). Both scripts take `--sign "Developer ID Application: ..."`; the release workflow passes it, and a local build has no certificate to pass.
 
-`scripts/make-icon.sh` re-renders `packaging/AppIcon.png` from `packaging/AppIcon.svg` and needs `librsvg`. Run it when the icon changes and commit the png.
+`scripts/make-icon.sh` re-renders `packaging/AppIcon.png` from `packaging/AppIcon.svg` and needs `librsvg`. Run it when the icon changes, then run `scripts/generate-macos-icons.sh` (macOS with Xcode) to rebuild `packaging/icons/`, and commit the results. See `resources/app-icons/README.md`.
 
 Killdeer uses only Apple frameworks (`Foundation`, `AppKit`, `SwiftUI`, `ServiceManagement`, `IOKit`, and Darwin/libproc) and needs no special permission to inspect or signal processes owned by the same user.
 

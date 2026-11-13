@@ -2,7 +2,7 @@
 # Builds dist/Killdeer.app into dist/, ready to run or to be put in a dmg.
 #
 # SwiftPM produces bare executables, so the .app around them is assembled here:
-# the universal binaries, an .icns made from packaging/AppIcon.png, and
+# the universal binaries, packaging/icons/{icon.icns,Assets.car}, and
 # packaging/Info.plist with the version filled in from the VERSION file.
 #
 #   scripts/make-app.sh                        # unsigned; for local use
@@ -73,30 +73,11 @@ for binary in killdeer-app killdeer; do
   esac
 done
 
-# The .icns is generated rather than committed: packaging/AppIcon.png is the
-# master, and a second copy of it in another format is a second thing to keep in
-# step. The master is 1024x1024, so the 512x512@2x slot is a straight copy and
-# every other slot is a downscale.
-ICONSET_ROOT=$(mktemp -d)
-trap 'rm -rf "$ICONSET_ROOT"' EXIT
-ICONSET="$ICONSET_ROOT/AppIcon.iconset"
-mkdir -p "$ICONSET"
-MASTER="packaging/AppIcon.png"
-if [ ! -f "$MASTER" ]; then
-  echo "Error: $MASTER is missing. Run scripts/make-icon.sh." >&2
-  exit 1
-fi
-sips -z 16 16     "$MASTER" --out "$ICONSET/icon_16x16.png"      >/dev/null
-sips -z 32 32     "$MASTER" --out "$ICONSET/icon_16x16@2x.png"   >/dev/null
-sips -z 32 32     "$MASTER" --out "$ICONSET/icon_32x32.png"      >/dev/null
-sips -z 64 64     "$MASTER" --out "$ICONSET/icon_32x32@2x.png"   >/dev/null
-sips -z 128 128   "$MASTER" --out "$ICONSET/icon_128x128.png"    >/dev/null
-sips -z 256 256   "$MASTER" --out "$ICONSET/icon_128x128@2x.png" >/dev/null
-sips -z 256 256   "$MASTER" --out "$ICONSET/icon_256x256.png"    >/dev/null
-sips -z 512 512   "$MASTER" --out "$ICONSET/icon_256x256@2x.png" >/dev/null
-sips -z 512 512   "$MASTER" --out "$ICONSET/icon_512x512.png"    >/dev/null
-sips -z 1024 1024 "$MASTER" --out "$ICONSET/icon_512x512@2x.png" >/dev/null
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+# The size-specific icon.icns and the matching asset catalog are committed and
+# verified by scripts/generate-macos-icons.sh. A plain sips + iconutil pass would
+# store 16/32px as PNG (icp4/icp5, which IconServices can miscolour) and leave
+# no Assets.car, which gives Finder's list view a white frame on macOS 27.
+cp packaging/icons/icon.icns packaging/icons/Assets.car "$APP/Contents/Resources/"
 
 # Matched with the element around it rather than on its own. The comment at the
 # top of packaging/Info.plist names the placeholder to explain it, and a bare

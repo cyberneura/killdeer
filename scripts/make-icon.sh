@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Renders packaging/AppIcon.svg to packaging/AppIcon.png, the master every icns
-# slot is made from.
+# Renders packaging/AppIcon.svg to packaging/AppIcon.png, the master that
+# scripts/generate-macos-icons.sh turns into packaging/icons/{icon.icns,Assets.car}.
 #
 # Run by hand when the icon changes, and commit the png. It is not part of
 # make-app.sh because that would put librsvg on the critical path of every
 # release build, on a runner where the icon has not changed since the last one.
 #
 # The png is therefore a generated file that is committed, and the two can drift.
-# If the app ships an icon that does not match the svg, this is why: run this.
+# If the app ships an icon that does not match the svg, this is why: run this,
+# then scripts/generate-macos-icons.sh.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
