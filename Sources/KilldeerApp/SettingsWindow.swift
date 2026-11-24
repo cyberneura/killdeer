@@ -21,7 +21,7 @@ enum SettingsWindow {
 
     private static func makeWindow(settings: MeterSettings, monitor: ProcessMonitor) -> NSWindow {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 460),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 500),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -82,6 +82,9 @@ struct SettingsView: View {
             style: style,
             level: monitor.cpuMeterLevel,
             coreLevels: style.usesCores ? monitor.coreLevels : [],
+            cpuHistory: style.usesHistory ? HistoryGraph.cpuLevels(monitor.history) : [],
+            temperatureHistory: style.usesHistory ? HistoryGraph.temperatureLevels(monitor.history) : [],
+            temperatureLevel: style.usesTemperature ? TemperatureMeter.level(forCelsius: monitor.temperatureCelsius) : nil,
             flapFrame: 0,
             warning: false
         ))

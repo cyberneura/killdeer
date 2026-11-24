@@ -1,0 +1,40 @@
+menu:
+  - title: Run the menu bar app (debug)
+    help: >-
+      swift run killdeer-app. Ctrl-C to quit. Notifications and Start at Login
+      need a real bundle; use "Build and open Killdeer.app" for those.
+    shell: swift run killdeer-app --interval {interval}
+    args:
+      - name: interval
+        prompt: Polling interval in seconds (2 fills the history graph quickest)
+        default: "10"
+
+  - title: Build and open Killdeer.app
+    help: >-
+      scripts/make-app.sh, then open dist/Killdeer.app. Quit an installed
+      Killdeer first, or Launch Services may bring that one forward instead.
+    shell: scripts/make-app.sh && open dist/Killdeer.app
+
+  - title: Quit every running Killdeer
+    help: Both the installed app and a development build; they share the process name.
+    shell: pkill -x killdeer-app || echo "Killdeer is not running."
+
+  - title: Run the tests
+    shell: swift test
+
+  - title: Build (debug)
+    shell: swift build
+
+  - title: CLI
+    submenu:
+      - title: scan
+        shell: swift run killdeer scan
+      - title: top
+        shell: swift run killdeer top
+      - title: chrome
+        shell: swift run killdeer chrome
+      - title: clean-chrome
+        shell: swift run killdeer clean-chrome
+
+  - title: Build the dmg
+    shell: scripts/make-dmg.sh
