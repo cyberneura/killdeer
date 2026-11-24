@@ -19,7 +19,7 @@ struct MeterFrame: Hashable {
     var temperatureLevel: Int? = nil
     /// Which beat of the wing, for the flapping bird; 0 for the others.
     var flapFrame: Int
-    /// Red for a runaway, as every style is.
+    /// Red for a runaway or a strained machine, as every style is.
     var warning: Bool
 }
 
