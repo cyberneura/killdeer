@@ -22,6 +22,8 @@ final class ProcessMonitor: ObservableObject {
         Array(repeating: 0, count: ProcessInfo.processInfo.activeProcessorCount)
     @Published private(set) var temperatureCelsius: Double?
     @Published private(set) var history = LoadHistory()
+    /// Trouble with the whole machine rather than with one process.
+    @Published private(set) var strain = SystemStrain()
     @Published private(set) var chromeInstances: [ChromeInstance] = []
     /// The busiest processes of the last scan, runaway or not.
     @Published private(set) var topProcesses: [ProcessFinding] = []
@@ -31,12 +33,19 @@ final class ProcessMonitor: ObservableObject {
     private let temperatureReader = TemperatureReader()
     private var previousCPUTicks: CPUTicks?
     private var previousCoreTicks: [CPUTicks]?
+    private var peggedCPU = PeggedCPUDetector()
+    /// `ProcessInfo.systemUptime` at the sample `previousCPUTicks` came from.
+    private var previousCPUSampleUptime: TimeInterval?
+    private var thermalObserver: NSObjectProtocol?
     let pollingInterval: TimeInterval
     private var pollingTask: Task<Void, Never>?
     private var runningScan: Task<Void, Never>?
     private var knownRunawayPIDs: Set<pid_t> = []
 
     var hasRunaways: Bool { !findings.isEmpty }
+
+    /// What turns the menu bar picture red.
+    var isWarning: Bool { hasRunaways || strain.isWarning }
 
     /// How full the meter beside the menu bar bird is, from 0 to
     /// `CPUMeter.steps`.
@@ -48,7 +57,7 @@ final class ProcessMonitor: ObservableObject {
     /// Spoken for the menu bar item. The meter is drawn, so without the figure
     /// here VoiceOver would announce the bird and nothing of what it shows.
     var accessibilityLabel: String {
-        var label = hasRunaways ? "Killdeer warning" : "Killdeer"
+        var label = isWarning ? "Killdeer warning" : "Killdeer"
         if let cpuPercent { label += String(format: ", CPU %.0f%%", cpuPercent) }
         if let temperatureCelsius { label += String(format: ", %.0f degrees Celsius", temperatureCelsius) }
         return label
@@ -76,6 +85,14 @@ final class ProcessMonitor: ObservableObject {
     init() {
         pollingInterval = Self.configuredPollingInterval()
         requestNotificationPermission()
+        // Told rather than polled: a state that came and went between two
+        // polls would otherwise never be seen.
+        thermalObserver = NotificationCenter.default.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.updateStrain() }
+        }
+        updateStrain()
         pollingTask = Task { [weak self] in
             guard let self else { return }
             await self.refreshSystemStats()
@@ -95,6 +112,7 @@ final class ProcessMonitor: ObservableObject {
 
     deinit {
         pollingTask?.cancel()
+        if let thermalObserver { NotificationCenter.default.removeObserver(thermalObserver) }
     }
 
     func scanNow() {
@@ -185,7 +203,8 @@ final class ProcessMonitor: ObservableObject {
     private func refreshSystemStats() async {
         let reader = temperatureReader
         let sample = await Task.detached {
-            (ticks: CPULoad.sample(), cores: CPULoad.sampleCores(), readings: reader.readings())
+            (ticks: CPULoad.sample(), uptime: ProcessInfo.processInfo.systemUptime,
+             cores: CPULoad.sampleCores(), readings: reader.readings())
         }.value
 
         // This poll's own figure for the history. cpuPercent keeps the last
@@ -201,6 +220,10 @@ final class ProcessMonitor: ObservableObject {
             }
             previousCPUTicks = ticks
         }
+        // A failed sample leaves the previous ticks in place, so the next
+        // figure covers the time since those, and so does this.
+        let elapsed = previousCPUSampleUptime.map { sample.uptime - $0 } ?? 0
+        if sample.ticks != nil { previousCPUSampleUptime = sample.uptime }
         if let cores = sample.cores {
             if let previous = previousCoreTicks,
                let percents = CPULoad.corePercentages(from: previous, to: cores) {
@@ -210,6 +233,22 @@ final class ProcessMonitor: ObservableObject {
         }
         temperatureCelsius = TemperatureSelection.representative(from: sample.readings)
         history.append(cpuPercent: polledCPUPercent, temperatureCelsius: temperatureCelsius)
+
+        _ = peggedCPU.update(cpuPercent: polledCPUPercent, interval: elapsed)
+        updateStrain()
+    }
+
+    private func updateStrain() {
+        let current = SystemStrain(
+            cpuPegged: peggedCPU.isPegged,
+            thermal: ThermalPressure(ProcessInfo.processInfo.thermalState)
+        )
+        guard current != strain else { return }
+        let announcements = current.notifications(since: strain)
+        strain = current
+        for announcement in announcements {
+            postNotification(title: announcement.title, body: announcement.body)
+        }
     }
 
     private func refresh(reporting failure: String?) async {
@@ -306,10 +345,17 @@ final class ProcessMonitor: ObservableObject {
     }
 
     private func postNotification(count: Int) {
+        postNotification(
+            title: "Killdeer detected a runaway process",
+            body: "\(count) new runaway process\(count == 1 ? "" : "es") detected. Open Killdeer to review."
+        )
+    }
+
+    private func postNotification(title: String, body: String) {
         guard Self.canNotify else { return }
         let content = UNMutableNotificationContent()
-        content.title = "Killdeer detected a runaway process"
-        content.body = "\(count) new runaway process\(count == 1 ? "" : "es") detected. Open Killdeer to review."
+        content.title = title
+        content.body = body
         content.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }

@@ -62,7 +62,7 @@ private struct MenuBarLabel: View {
                 ? HistoryGraph.temperatureLevels(monitor.history) : [],
             temperatureLevel: settings.style.usesTemperature ? TemperatureMeter.level(forCelsius: monitor.temperatureCelsius) : nil,
             flapFrame: settings.style.isAnimated ? flap.frame : 0,
-            warning: monitor.hasRunaways
+            warning: monitor.isWarning
         )
         Image(nsImage: Self.images.image(for: frame))
             .accessibilityLabel(monitor.accessibilityLabel)
@@ -83,6 +83,10 @@ private struct KilldeerMenu: View {
 
         if !content.snapshot.systemText.isEmpty {
             Text(content.snapshot.systemText)
+        }
+
+        if let strainText = content.snapshot.strainText {
+            Text(strainText)
         }
 
         Button("Scan Now") {

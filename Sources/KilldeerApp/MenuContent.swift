@@ -15,6 +15,7 @@ final class MenuContent: ObservableObject {
     struct Snapshot {
         var statusText = ""
         var systemText = ""
+        var strainText: String?
         var isScanning = false
         var isWorking = false
         var findings: [ProcessFinding] = []
@@ -66,6 +67,7 @@ final class MenuContent: ObservableObject {
         snapshot = Snapshot(
             statusText: monitor.statusText,
             systemText: monitor.systemText(style: settings.style),
+            strainText: monitor.strain.menuText,
             isScanning: monitor.isScanning,
             isWorking: monitor.isWorking,
             findings: monitor.findings,
