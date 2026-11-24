@@ -21,6 +21,7 @@ final class ProcessMonitor: ObservableObject {
     @Published private(set) var corePercents: [Double] =
         Array(repeating: 0, count: ProcessInfo.processInfo.activeProcessorCount)
     @Published private(set) var temperatureCelsius: Double?
+    @Published private(set) var history = LoadHistory()
     @Published private(set) var chromeInstances: [ChromeInstance] = []
     /// The busiest processes of the last scan, runaway or not.
     @Published private(set) var topProcesses: [ProcessFinding] = []
@@ -49,20 +50,18 @@ final class ProcessMonitor: ObservableObject {
     var accessibilityLabel: String {
         var label = hasRunaways ? "Killdeer warning" : "Killdeer"
         if let cpuPercent { label += String(format: ", CPU %.0f%%", cpuPercent) }
+        if let temperatureCelsius { label += String(format: ", %.0f degrees Celsius", temperatureCelsius) }
         return label
     }
 
-    /// The system line under the status.
+    /// The system line under the status, worded for `style`.
     ///
     /// A machine with no readable sensors still shows its CPU figure here, so
     /// the only time this is empty is the first poll, before there are two tick
     /// samples to subtract, on a machine that also has no sensors. The menu
     /// drops the row then rather than showing a pair of dashes.
-    var systemText: String {
-        var parts: [String] = []
-        if let cpuPercent { parts.append(String(format: "CPU %.1f%%", cpuPercent)) }
-        if let temperatureCelsius { parts.append(String(format: "%.1f °C", temperatureCelsius)) }
-        return parts.joined(separator: "    ")
+    func systemText(style: MeterStyle) -> String {
+        SystemLine.text(cpuPercent: cpuPercent, temperatureCelsius: temperatureCelsius, style: style)
     }
 
     var statusText: String {
@@ -189,11 +188,16 @@ final class ProcessMonitor: ObservableObject {
             (ticks: CPULoad.sample(), cores: CPULoad.sampleCores(), readings: reader.readings())
         }.value
 
+        // This poll's own figure for the history. cpuPercent keeps the last
+        // good one when a sample fails, which suits the menu but would put a
+        // reading into the graph that was never taken.
+        var polledCPUPercent: Double?
         if let ticks = sample.ticks {
             // The first sample has nothing to subtract from, so the percentage
             // appears one poll later rather than reading 0% at launch.
             if let previous = previousCPUTicks {
                 cpuPercent = CPULoad.percentage(from: previous, to: ticks)
+                polledCPUPercent = cpuPercent
             }
             previousCPUTicks = ticks
         }
@@ -205,6 +209,7 @@ final class ProcessMonitor: ObservableObject {
             previousCoreTicks = cores
         }
         temperatureCelsius = TemperatureSelection.representative(from: sample.readings)
+        history.append(cpuPercent: polledCPUPercent, temperatureCelsius: temperatureCelsius)
     }
 
     private func refresh(reporting failure: String?) async {
@@ -289,11 +294,19 @@ final class ProcessMonitor: ObservableObject {
         }.value
     }
 
+    /// UNUserNotificationCenter raises an uncaught exception when the process
+    /// is not inside an .app, which is how `swift run killdeer-app` starts it.
+    /// The Info.plist linked into the executable gives it a bundle identifier
+    /// but not a bundle, so the identifier is no test.
+    private static let canNotify = Bundle.main.bundleURL.pathExtension == "app"
+
     private func requestNotificationPermission() {
+        guard Self.canNotify else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
     private func postNotification(count: Int) {
+        guard Self.canNotify else { return }
         let content = UNMutableNotificationContent()
         content.title = "Killdeer detected a runaway process"
         content.body = "\(count) new runaway process\(count == 1 ? "" : "es") detected. Open Killdeer to review."
@@ -304,13 +317,20 @@ final class ProcessMonitor: ObservableObject {
     private static func configuredPollingInterval() -> TimeInterval {
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--interval"), arguments.indices.contains(index + 1),
-           let value = TimeInterval(arguments[index + 1]), value > 0 {
+           let value = usableInterval(arguments[index + 1]) {
             return value
         }
         if let raw = ProcessInfo.processInfo.environment["KILLDEER_INTERVAL"],
-           let value = TimeInterval(raw), value > 0 {
+           let value = usableInterval(raw) {
             return value
         }
         return 10
+    }
+
+    /// At most a day. The sleep converts the interval to nanoseconds in a
+    /// UInt64, which traps for infinity and for anything past about 584 years.
+    private static func usableInterval(_ raw: String) -> TimeInterval? {
+        guard let value = TimeInterval(raw), value.isFinite, value > 0, value <= 86_400 else { return nil }
+        return value
     }
 }

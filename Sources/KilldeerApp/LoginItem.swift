@@ -33,7 +33,12 @@ final class LoginItemController: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 guard !Task.isCancelled else { break }
-                self?.status = SMAppService.mainApp.status
+                // Only on a change: every assignment publishes, and the menu
+                // observes this, so an unchanged status would rebuild it every
+                // five seconds, open or not.
+                guard let self else { break }
+                let status = SMAppService.mainApp.status
+                if status != self.status { self.status = status }
             }
         }
     }

@@ -5,26 +5,32 @@ import Foundation
 ///
 /// Every style is drawn from the same quantised level, `CPUMeter.level`, so
 /// that the image can only ever be one of a small number of pictures; the two
-/// per-core styles add one level per core on top of that. The drawing lives
+/// per-core styles add one level per core on top of that, three styles add the
+/// temperature on `TemperatureMeter`'s ten steps, and the history graph draws
+/// past readings on its own scale. The drawing lives
 /// in the app, where AppKit is; what is here is the choice and the arithmetic
 /// behind each picture, which is what can be tested without a screen.
 public enum MeterStyle: String, CaseIterable, Sendable {
     /// The bird with the upright gauge beside it, as the app first shipped.
     case birdWithGauge = "bird-with-gauge"
-    /// A ring that fills clockwise from seven o'clock round to five.
+    /// Two concentric rings filling clockwise from seven o'clock round to
+    /// five: the CPU outside, the temperature inside.
     case ringGauge = "ring-gauge"
     /// The bird on its own, beating its wing faster the busier the machine is.
     case flappingBird = "flapping-bird"
     /// One upright bar per core, side by side like an equaliser.
     case coreBars = "core-bars"
-    /// One tile per core, the darker the busier.
+    /// One tile per core, the darker the busier, with a temperature meter.
     case coreHeatmap = "core-heatmap"
     /// New moon at idle, waxing to a full moon at full load.
     case moonPhase = "moon-phase"
     /// Sun, then cloud, rain and thunder as the load climbs.
     case weather = "weather"
-    /// A cup that fills and steams, and spills over at full load.
+    /// A cup that fills with the load and spills over at full load, steaming
+    /// with the temperature.
     case coffeeCup = "coffee-cup"
+    /// The last few minutes of CPU use and temperature, as a small chart.
+    case historyGraph = "history-graph"
 
     public static let `default` = MeterStyle.birdWithGauge
 
@@ -42,6 +48,7 @@ public enum MeterStyle: String, CaseIterable, Sendable {
         case .moonPhase: return "Moon phase"
         case .weather: return "Weather"
         case .coffeeCup: return "Coffee cup"
+        case .historyGraph: return "History graph"
         }
     }
 
@@ -51,19 +58,21 @@ public enum MeterStyle: String, CaseIterable, Sendable {
         case .birdWithGauge:
             return "The bird, with a gauge beside it that fills from the bottom in steps of ten percent."
         case .ringGauge:
-            return "A ring that fills clockwise from seven o'clock, like a speedometer; full at five o'clock."
+            return "Two rings that fill clockwise from seven o'clock round to five, like a speedometer: the CPU use outside, the temperature inside."
         case .flappingBird:
             return "The bird alone. It sits still when the machine is idle and beats its wing faster as the load climbs."
         case .coreBars:
             return "One bar per core, so a single core pegged by one process stands out from an evenly busy machine."
         case .coreHeatmap:
-            return "One tile per core, darker the busier the core; the whole grid darkens as the machine does."
+            return "One tile per core, darker the busier the core, with a thin temperature meter at the right-hand edge."
         case .moonPhase:
             return "A new moon when idle, waxing through a half moon to a full moon at full load."
         case .weather:
             return "Sun when idle, then a cloud, rain, and thunder at full load."
         case .coffeeCup:
-            return "A cup that fills with the load and steams more as it climbs; at full load it spills over."
+            return "A cup that fills with the load and spills over at full load; the hotter the chip, the more it steams."
+        case .historyGraph:
+            return "Two charts of the last \(LoadHistory.capacity) readings, newest at the right: the CPU use on top, and the temperature below, from \(Int(TemperatureMeter.range.lowerBound)) to \(Int(TemperatureMeter.range.upperBound)) °C."
         }
     }
 
@@ -73,6 +82,116 @@ public enum MeterStyle: String, CaseIterable, Sendable {
     /// Whether the picture is drawn from the load of each core rather than
     /// from the one figure for the whole machine.
     public var usesCores: Bool { self == .coreBars || self == .coreHeatmap }
+
+    /// Whether the picture is drawn from the past readings rather than the
+    /// current one.
+    public var usesHistory: Bool { self == .historyGraph }
+
+    /// Whether the picture shows the current temperature beside the load.
+    /// The history graph shows past temperatures instead, through
+    /// `usesHistory`.
+    public var usesTemperature: Bool {
+        self == .ringGauge || self == .coffeeCup || self == .coreHeatmap
+    }
+}
+
+/// The temperature on the same ten steps as `CPUMeter`, for the styles that
+/// show it beside the load.
+public enum TemperatureMeter {
+    /// An idle Apple silicon die sits near 40 °C and a loaded one passes
+    /// 100 °C, where it throttles; a scale starting at zero would spend a
+    /// third of a small picture on temperatures a running chip never has.
+    public static let range: ClosedRange<Double> = 30...100
+
+    /// 0 through `steps`, or nil without a reading, so that "no sensor" can
+    /// be told from "cool".
+    public static func level(forCelsius celsius: Double?, steps: Int = CPUMeter.steps) -> Int? {
+        guard let celsius, celsius.isFinite else { return nil }
+        let position = (celsius - range.lowerBound) / (range.upperBound - range.lowerBound)
+        return Int((min(max(position, 0), 1) * Double(steps)).rounded())
+    }
+}
+
+/// The system line in the menu.
+public enum SystemLine {
+    /// The history graph's line says which row is which, since 18pt leaves
+    /// no room to label the picture itself.
+    public static func text(cpuPercent: Double?, temperatureCelsius: Double?, style: MeterStyle) -> String {
+        var parts: [String] = []
+        if style.usesHistory {
+            if let cpuPercent { parts.append(String(format: "CPU %.0f%% (↑)", cpuPercent)) }
+            if let temperatureCelsius { parts.append(String(format: "%.0f℃ (↓)", temperatureCelsius)) }
+        } else {
+            if let cpuPercent { parts.append(String(format: "CPU %.1f%%", cpuPercent)) }
+            if let temperatureCelsius { parts.append(String(format: "%.1f °C", temperatureCelsius)) }
+        }
+        return parts.joined(separator: "    ")
+    }
+}
+
+/// The readings of the last few polls, oldest first, for the history graph.
+///
+/// Kept whatever the style, so that switching to the graph shows the minutes
+/// already gone rather than an empty chart that fills over the next five.
+public struct LoadHistory: Equatable, Sendable {
+    /// Readings kept: five minutes at the default ten-second poll, one point
+    /// of the graph's width each.
+    public static let capacity = 30
+
+    /// nil where there was no reading: the first poll, before two tick samples
+    /// exist, and every poll on a machine with no readable sensor.
+    public private(set) var cpuPercents: [Double?] = []
+    public private(set) var temperatures: [Double?] = []
+
+    public init() {}
+
+    public mutating func append(cpuPercent: Double?, temperatureCelsius: Double?) {
+        cpuPercents.append(cpuPercent)
+        temperatures.append(temperatureCelsius)
+        if cpuPercents.count > Self.capacity {
+            cpuPercents.removeFirst(cpuPercents.count - Self.capacity)
+            temperatures.removeFirst(temperatures.count - Self.capacity)
+        }
+    }
+}
+
+/// The history graph's scales: how high each reading stands in the chart.
+public enum HistoryGraph {
+    /// Points of height each of the two rows has, one per step, so that a
+    /// step is the finest change the menu bar can show anyway: 18pt holds two
+    /// rows of 7 with a gap between them.
+    public static let steps = 7
+
+    /// One level per reading, padded at the front with nils to `capacity`, so
+    /// that the newest is always at the right edge and the picture does not
+    /// change width as the history fills.
+    public static func cpuLevels(_ history: LoadHistory) -> [Int?] {
+        padded(history.cpuPercents.map { $0.map(cpuLevel(forPercent:)) })
+    }
+
+    public static func temperatureLevels(_ history: LoadHistory) -> [Int?] {
+        padded(history.temperatures.map { $0.flatMap(temperatureLevel(forCelsius:)) })
+    }
+
+    /// Like `CPUMeter.level`, anything above zero stands at least one step:
+    /// a flat line along the bottom beside a non-zero figure would read as
+    /// the graph being broken.
+    static func cpuLevel(forPercent percent: Double) -> Int {
+        guard percent.isFinite, percent > 0 else { return 0 }
+        let filled = Int((min(percent, 100) / 100 * Double(steps)).rounded())
+        return min(steps, max(1, filled))
+    }
+
+    /// nil for a reading that is no number, so that the line breaks rather
+    /// than dropping to the floor.
+    static func temperatureLevel(forCelsius celsius: Double) -> Int? {
+        TemperatureMeter.level(forCelsius: celsius, steps: steps)
+    }
+
+    private static func padded(_ levels: [Int?]) -> [Int?] {
+        let kept = levels.suffix(LoadHistory.capacity)
+        return Array(repeating: nil, count: LoadHistory.capacity - kept.count) + kept
+    }
 }
 
 /// The wing beat of the flapping bird.
@@ -119,10 +238,13 @@ public struct CoffeeCup: Equatable, Sendable {
     /// Spilling over the rim, at full load only.
     public let overflowing: Bool
 
-    public static func forLevel(_ level: Int) -> CoffeeCup {
+    /// `temperatureLevel` is on `TemperatureMeter`'s scale and sets the steam.
+    /// Without one the steam follows the load, so that a Mac with no readable
+    /// sensor still has a cup that steams.
+    public static func forLevel(_ level: Int, temperatureLevel: Int? = nil) -> CoffeeCup {
         let level = CPUMeter.clamp(level)
         let steam: Int
-        switch level {
+        switch CPUMeter.clamp(temperatureLevel ?? level) {
         case 0: steam = 0
         case 1...3: steam = 1
         case 4...6: steam = 2
@@ -149,6 +271,7 @@ public enum MoonPhase {
 }
 
 /// The arc of the ring gauge, as clock angles: degrees clockwise from twelve.
+/// Both rings, the CPU outside and the temperature inside, share it.
 public enum RingGauge {
     /// Seven o'clock.
     public static let startDegrees: Double = 210

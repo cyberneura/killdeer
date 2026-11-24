@@ -10,6 +10,13 @@ struct MeterFrame: Hashable {
     /// One level per bar or tile, for the styles that use cores; empty for
     /// the others, so that their keys do not change with the cores.
     var coreLevels: [Int]
+    /// `HistoryGraph` levels, oldest first, for the history graph; empty for
+    /// the others, for the same reason as `coreLevels`.
+    var cpuHistory: [Int?] = []
+    var temperatureHistory: [Int?] = []
+    /// `TemperatureMeter` level for the styles that use it, nil for the others
+    /// and on a Mac with no readable sensor.
+    var temperatureLevel: Int? = nil
     /// Which beat of the wing, for the flapping bird; 0 for the others.
     var flapFrame: Int
     /// Red for a runaway, as every style is.
@@ -20,8 +27,10 @@ struct MeterFrame: Hashable {
 /// published change from the monitor, and rasterising the glyph each time
 /// would redraw it several times a minute, or a dozen times a second while
 /// the bird flaps. The whole-machine styles can only ever be a few dozen
-/// pictures; the per-core styles have a key per combination of core levels,
-/// which is why the cache is emptied rather than left to grow.
+/// pictures, or about a hundred with the temperature; the per-core styles have
+/// a key per combination of core levels, and the history graph a new key on
+/// every reading, so that the cache does nothing for it. That is why the cache
+/// is emptied rather than left to grow.
 @MainActor
 final class MeterImageCache {
     private var images: [MeterFrame: NSImage] = [:]
@@ -61,7 +70,7 @@ enum MeterArt {
             return KilldeerBird.menuBarImage(tint: tint, wingFrame: frame.flapFrame)
         case .ringGauge:
             return draw(width: height, tint: tint) { context, colour in
-                ring(context, colour: colour, level: frame.level)
+                ring(context, colour: colour, level: frame.level, temperatureLevel: frame.temperatureLevel)
             }
         case .coreBars:
             let levels = frame.coreLevels.isEmpty ? [0] : frame.coreLevels
@@ -70,8 +79,10 @@ enum MeterArt {
             }
         case .coreHeatmap:
             let levels = frame.coreLevels.isEmpty ? [0] : frame.coreLevels
-            return draw(width: heatmapWidth(count: levels.count), tint: tint) { context, colour in
+            let gridWidth = heatmapWidth(count: levels.count)
+            return draw(width: gridWidth + thermometerGap + thermometerWidth, tint: tint) { context, colour in
                 heatmap(context, colour: colour, levels: levels)
+                thermometer(context, colour: colour, x: gridWidth + thermometerGap, level: frame.temperatureLevel)
             }
         case .moonPhase:
             return draw(width: height, tint: tint) { context, colour in
@@ -83,7 +94,11 @@ enum MeterArt {
             }
         case .coffeeCup:
             return draw(width: height, tint: tint) { context, colour in
-                coffee(context, colour: colour, level: frame.level)
+                coffee(context, colour: colour, level: frame.level, temperatureLevel: frame.temperatureLevel)
+            }
+        case .historyGraph:
+            return draw(width: CGFloat(LoadHistory.capacity), tint: tint) { context, colour in
+                history(context, colour: colour, cpu: frame.cpuHistory, temperature: frame.temperatureHistory)
             }
         }
     }
@@ -116,7 +131,7 @@ enum MeterArt {
     /// An arc from a clock angle, `sweep` degrees clockwise on the screen.
     private static func arc(center: CGPoint, radius: CGFloat, from start: Double, sweep: Double) -> CGPath {
         let path = CGMutablePath()
-        let segments = max(1, Int((sweep / 5).rounded(.up)))
+        let segments = max(1, Int((abs(sweep) / 5).rounded(.up)))
         for step in 0...segments {
             let degrees = start + sweep * Double(step) / Double(segments)
             let point = clockPoint(center: center, radius: radius, degrees: degrees)
@@ -137,20 +152,27 @@ enum MeterArt {
 
     // MARK: - Ring gauge
 
-    private static func ring(_ context: CGContext, colour: NSColor, level: Int) {
+    private static func ring(_ context: CGContext, colour: NSColor, level: Int, temperatureLevel: Int?) {
         let center = CGPoint(x: height / 2, y: height / 2)
-        let radius: CGFloat = 6.5
-        context.setLineWidth(2.5)
+        // 2pt lines with 1pt between them: the outer ring's edge stays inside
+        // the 18pt square and the inner one keeps a visible hole.
+        context.setLineWidth(2)
         context.setLineCap(.round)
-        // The track, so that an idle machine still shows where the ring is.
+        let rings: [(radius: CGFloat, level: Int?)] = [(7, level), (4, temperatureLevel)]
+        // Both tracks, so that an idle machine, or one with no sensor, still
+        // shows where each ring is.
         colour.withAlphaComponent(0.3).setStroke()
-        context.addPath(arc(center: center, radius: radius,
-                            from: RingGauge.startDegrees, sweep: RingGauge.sweepDegrees))
+        for ring in rings {
+            context.addPath(arc(center: center, radius: ring.radius,
+                                from: RingGauge.startDegrees, sweep: RingGauge.sweepDegrees))
+        }
         context.strokePath()
-        let sweep = RingGauge.sweep(forLevel: level)
-        guard sweep > 0 else { return }
         colour.setStroke()
-        context.addPath(arc(center: center, radius: radius, from: RingGauge.startDegrees, sweep: sweep))
+        for ring in rings {
+            let sweep = RingGauge.sweep(forLevel: ring.level ?? 0)
+            guard sweep > 0 else { continue }
+            context.addPath(arc(center: center, radius: ring.radius, from: RingGauge.startDegrees, sweep: sweep))
+        }
         context.strokePath()
     }
 
@@ -202,6 +224,21 @@ enum MeterArt {
             colour.withAlphaComponent(0.15 + 0.85 * fraction(level)).setFill()
             context.fill(rect)
         }
+    }
+
+    private static let thermometerGap: CGFloat = 2
+    private static let thermometerWidth: CGFloat = 2
+
+    /// An upright bar at `x`, filling from the bottom with the temperature;
+    /// the track alone without a reading.
+    private static func thermometer(_ context: CGContext, colour: NSColor, x: CGFloat, level: Int?) {
+        let track = CGRect(x: x, y: 2, width: thermometerWidth, height: height - 4)
+        colour.withAlphaComponent(0.25).setFill()
+        context.fill(track)
+        let filled = track.height * fraction(level ?? 0)
+        guard filled > 0 else { return }
+        colour.setFill()
+        context.fill(CGRect(x: x, y: track.maxY - filled, width: thermometerWidth, height: filled))
     }
 
     // MARK: - Moon phase
@@ -307,8 +344,8 @@ enum MeterArt {
 
     // MARK: - Coffee cup
 
-    private static func coffee(_ context: CGContext, colour: NSColor, level: Int) {
-        let cup = CoffeeCup.forLevel(level)
+    private static func coffee(_ context: CGContext, colour: NSColor, level: Int, temperatureLevel: Int?) {
+        let cup = CoffeeCup.forLevel(level, temperatureLevel: temperatureLevel)
         let body = CGRect(x: 3.5, y: 7.5, width: 9, height: 7)
         context.setLineWidth(1)
         context.setLineCap(.round)
@@ -355,6 +392,33 @@ enum MeterArt {
             context.fill(CGRect(x: body.minX - 0.5, y: body.minY - 1.5, width: body.width + 1, height: 2))
             context.fillEllipse(in: CGRect(x: body.minX - 2.5, y: body.minY + 1, width: 2, height: 2.5))
             context.fillEllipse(in: CGRect(x: body.minX - 2, y: body.minY + 4.5, width: 1.5, height: 2))
+        }
+    }
+
+    // MARK: - History graph
+
+    /// Two rows, one point of width per reading: the CPU on top and the
+    /// temperature below, as the menu's system line marks them. Kept apart rather than overlaid because a template image
+    /// has one colour, and a line over an area of the same colour was hard to
+    /// tell apart at 18pt.
+    private static func history(_ context: CGContext, colour: NSColor, cpu: [Int?], temperature: [Int?]) {
+        let rowHeight = CGFloat(HistoryGraph.steps)
+        let gap = height - 2 - 2 * rowHeight
+        historyRow(context, colour: colour, levels: cpu, bottom: 1 + rowHeight)
+        historyRow(context, colour: colour, levels: temperature, bottom: 1 + 2 * rowHeight + gap)
+    }
+
+    private static func historyRow(_ context: CGContext, colour: NSColor, levels: [Int?], bottom: CGFloat) {
+        let rowHeight = CGFloat(HistoryGraph.steps)
+        // The whole row faintly, so that an empty history still shows where
+        // the graph is. A missing reading and a reading at the bottom of the
+        // scale (exactly 0% CPU, or 30 °C or less) both draw no bar.
+        colour.withAlphaComponent(0.2).setFill()
+        context.fill(CGRect(x: 0, y: bottom - rowHeight, width: CGFloat(LoadHistory.capacity), height: rowHeight))
+        colour.setFill()
+        for (index, level) in levels.enumerated() {
+            guard let level, level > 0 else { continue }
+            context.fill(CGRect(x: CGFloat(index), y: bottom - CGFloat(level), width: 1, height: CGFloat(level)))
         }
     }
 }
