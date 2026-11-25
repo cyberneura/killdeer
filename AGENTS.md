@@ -24,7 +24,7 @@ scripts/make-app.sh                   # dist/Killdeer.app (universal, unsigned)
 - A debug run (`swift run killdeer-app`) is a bare executable, not an .app. Notifications and Start at Login are skipped there, so check them with `scripts/make-app.sh`.
 - A debug run and the installed app share the user defaults domain `com.cyberneura.killdeer`. Changing the menu bar style in one changes it in the other. Both are processes named `killdeer-app`, so quit the installed one first or there are two items in the menu bar.
 - Do not hold `ObservableObject`s as `@StateObject` in the `App`. Any published change then invalidates the whole scene, the menu is rebuilt, and an open submenu closes on every reading. Only the view that draws a value should observe it (`MenuBarLabel` for the picture, `MenuContent` for the menu).
-- The menu bar item may be hidden by a menu bar manager, so a screenshot can miss it. To check a `MeterArt` change, render `MeterArt.image(for:)` offscreen at 8–10× instead: compile `MeterStyle.swift`, the `CPUMeter` part of `LoadSummary.swift` and `MeterArt.swift` together with a small `main.swift`.
+- The menu bar item may be hidden by a menu bar manager, so a screenshot can miss it. To check a `MeterArt` change, render `MeterArt.image(for:)` offscreen at 8–10× instead: copy every file of `Sources/KilldeerCore` plus `MeterArt.swift` and `KilldeerBird.swift` into a scratch directory, delete the `import KilldeerCore` lines, and compile them with `swiftc` together with a small `main.swift` that builds a `MeterFrame` and writes the image to a PNG. The Settings window can be checked the same way, with every file of `Sources/KilldeerApp` but `KilldeerApp.swift` and an `NSHostingView` of `SettingsView` drawn through `cacheDisplay`.
 
 ## Releasing
 

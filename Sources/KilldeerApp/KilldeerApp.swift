@@ -55,17 +55,15 @@ private struct MenuBarLabel: View {
         // only ever changes how full it is.
         let frame = MeterFrame(
             style: settings.style,
-            level: monitor.cpuMeterLevel,
-            coreLevels: settings.style.usesCores ? monitor.coreLevels : [],
-            cpuHistory: settings.style.usesHistory ? HistoryGraph.cpuLevels(monitor.history) : [],
-            temperatureHistory: settings.style.usesHistory
-                ? HistoryGraph.temperatureLevels(monitor.history) : [],
-            temperatureLevel: settings.style.usesTemperature ? TemperatureMeter.level(forCelsius: monitor.temperatureCelsius) : nil,
+            monitor: monitor,
+            settings: settings,
             flapFrame: settings.style.isAnimated ? flap.frame : 0,
             warning: monitor.isWarning
         )
         Image(nsImage: Self.images.image(for: frame))
-            .accessibilityLabel(monitor.accessibilityLabel)
+            .accessibilityLabel(monitor.accessibilityLabel(
+                order: settings.drawableOrder(temperatureAvailable: monitor.temperatureAvailable)
+            ))
     }
 }
 
@@ -81,8 +79,10 @@ private struct KilldeerMenu: View {
     var body: some View {
         Text(content.snapshot.statusText)
 
-        if !content.snapshot.systemText.isEmpty {
-            Text(content.snapshot.systemText)
+        // All of them, whatever the style has room for: the picture shows
+        // the first one or two, and this is where the rest are.
+        ForEach(content.snapshot.parameterLines, id: \.self) { line in
+            Text(line)
         }
 
         if let strainText = content.snapshot.strainText {
@@ -134,8 +134,9 @@ private struct KilldeerMenu: View {
             }
         }
 
+        Divider()
+
         if !content.snapshot.chromeInstances.isEmpty {
-            Divider()
             Menu("Chrome Instances (\(content.snapshot.chromeInstances.count))") {
                 // A submenu per instance rather than a flat list: the summary
                 // line is already long, and kill has to sit behind a second
@@ -176,6 +177,14 @@ private struct KilldeerMenu: View {
             }
         }
         .disabled(content.snapshot.isWorking)
+
+        if !content.snapshot.agentInstances.isEmpty {
+            Menu("AI Agents (\(content.snapshot.agentInstances.count))") {
+                ForEach(content.snapshot.agentInstances, id: \.id) { instance in
+                    AgentInstanceMenu(instance: instance, monitor: monitor, isWorking: content.snapshot.isWorking)
+                }
+            }
+        }
 
         Divider()
 
@@ -230,5 +239,54 @@ private struct KilldeerMenu: View {
         Button("Quit") {
             NSApplication.shared.terminate(nil)
         }
+    }
+}
+
+/// One agent session: what it is and where, then its processes.
+private struct AgentInstanceMenu: View {
+    let instance: AgentInstance
+    let monitor: ProcessMonitor
+    let isWorking: Bool
+
+    /// Rows listed before the rest are folded into a count. A session that
+    /// started a browser has dozens of processes, and a submenu taller than
+    /// the screen scrolls.
+    private static let processLimit = 12
+
+    var body: some View {
+        Menu(instance.menuSummary) {
+            if let directory = instance.workingDirectory {
+                Text(directory)
+            }
+            Text(details)
+            Divider()
+            let listed = instance.listedProcesses(limit: Self.processLimit)
+            // Kill sits one level down, as it does for Top Processes, so
+            // reading the list cannot end a process. There is no button for
+            // the whole session: ending the agent's own row does that, and
+            // the agent decides what to do with what it started.
+            ForEach(listed.shown, id: \.identity) { process in
+                Menu(process.menuSummary) {
+                    Text("PID \(process.identity.pid)")
+                    if !process.snapshot.executablePath.isEmpty {
+                        Text(process.snapshot.executablePath)
+                    }
+                    Button("Kill PID \(process.identity.pid)") {
+                        monitor.killAgentProcess(process)
+                    }
+                    .disabled(isWorking)
+                }
+            }
+            if listed.hidden > 0 {
+                Text("+ \(listed.hidden) more")
+            }
+        }
+    }
+
+    private var details: String {
+        var parts = ["PID \(instance.root.identity.pid)"]
+        if let launchedBy = instance.launchedBy { parts.append("launched by \(launchedBy)") }
+        parts.append("started \(ChromeFormatting.relativeTime(instance.startTime))")
+        return parts.joined(separator: " — ")
     }
 }

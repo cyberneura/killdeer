@@ -14,23 +14,29 @@ final class ProcessMonitor: ObservableObject {
     /// asked to kill and which is still running has to stay on screen until
     /// they do something about it, not until the next scan a few seconds later.
     @Published private(set) var terminationError: String?
-    @Published private(set) var cpuPercent: Double?
+    /// The latest figure for every parameter. One value rather than a
+    /// property each, so that a poll is one change to redraw for.
+    @Published private(set) var readings = SystemReadings()
     /// The use of each core, in core order. Starts as one idle reading per
     /// core rather than empty, so that the per-core styles are drawn at their
     /// full width from launch instead of growing with the first sample.
     @Published private(set) var corePercents: [Double] =
         Array(repeating: 0, count: ProcessInfo.processInfo.activeProcessorCount)
-    @Published private(set) var temperatureCelsius: Double?
     @Published private(set) var history = LoadHistory()
     /// Trouble with the whole machine rather than with one process.
     @Published private(set) var strain = SystemStrain()
     @Published private(set) var chromeInstances: [ChromeInstance] = []
+    @Published private(set) var agentInstances: [AgentInstance] = []
     /// The busiest processes of the last scan, runaway or not.
     @Published private(set) var topProcesses: [ProcessFinding] = []
 
     private let detector = ProcessDetector()
     private let chromeInspector = ChromeInspector()
+    private let agentInspector = AgentInspector()
     private let temperatureReader = TemperatureReader()
+    /// Whether this Mac has a sensor to read at all. Fixed at launch, so that
+    /// one failed read cannot reshuffle which parameter each style shows.
+    let temperatureAvailable: Bool
     private var previousCPUTicks: CPUTicks?
     private var previousCoreTicks: [CPUTicks]?
     private var peggedCPU = PeggedCPUDetector()
@@ -47,30 +53,15 @@ final class ProcessMonitor: ObservableObject {
     /// What turns the menu bar picture red.
     var isWarning: Bool { hasRunaways || strain.isWarning }
 
-    /// How full the meter beside the menu bar bird is, from 0 to
-    /// `CPUMeter.steps`.
-    var cpuMeterLevel: Int { CPUMeter.level(forPercent: cpuPercent) }
-
     /// One level per bar or tile for the per-core styles.
     var coreLevels: [Int] { CoreMeter.levels(forPercents: corePercents) }
 
-    /// Spoken for the menu bar item. The meter is drawn, so without the figure
-    /// here VoiceOver would announce the bird and nothing of what it shows.
-    var accessibilityLabel: String {
-        var label = isWarning ? "Killdeer warning" : "Killdeer"
-        if let cpuPercent { label += String(format: ", CPU %.0f%%", cpuPercent) }
-        if let temperatureCelsius { label += String(format: ", %.0f degrees Celsius", temperatureCelsius) }
-        return label
-    }
-
-    /// The system line under the status, worded for `style`.
-    ///
-    /// A machine with no readable sensors still shows its CPU figure here, so
-    /// the only time this is empty is the first poll, before there are two tick
-    /// samples to subtract, on a machine that also has no sensors. The menu
-    /// drops the row then rather than showing a pair of dashes.
-    func systemText(style: MeterStyle) -> String {
-        SystemLine.text(cpuPercent: cpuPercent, temperatureCelsius: temperatureCelsius, style: style)
+    /// Spoken for the menu bar item. The meter is drawn, so without the
+    /// figures here VoiceOver would announce the bird and nothing of what it
+    /// shows.
+    func accessibilityLabel(order: [MeterParameter]) -> String {
+        ([isWarning ? "Killdeer warning" : "Killdeer"] + ParameterLine.spoken(order: order, readings: readings))
+            .joined(separator: ", ")
     }
 
     var statusText: String {
@@ -84,6 +75,7 @@ final class ProcessMonitor: ObservableObject {
 
     init() {
         pollingInterval = Self.configuredPollingInterval()
+        temperatureAvailable = temperatureReader.isAvailable
         requestNotificationPermission()
         // Told rather than polled: a state that came and went between two
         // polls would otherwise never be seen.
@@ -172,6 +164,16 @@ final class ProcessMonitor: ObservableObject {
         terminate([finding])
     }
 
+    func killAgentProcess(_ process: AgentProcess) {
+        terminate([ProcessFinding(
+            process: process.snapshot,
+            cpuPercent: process.cpuPercent,
+            isOrphanChromeHelper: false,
+            score: 0,
+            reasons: []
+        )])
+    }
+
     func killChromeProcess(_ process: ChromeProcess) {
         terminate([ProcessFinding(
             process: process.snapshot,
@@ -204,19 +206,21 @@ final class ProcessMonitor: ObservableObject {
         let reader = temperatureReader
         let sample = await Task.detached {
             (ticks: CPULoad.sample(), uptime: ProcessInfo.processInfo.systemUptime,
-             cores: CPULoad.sampleCores(), readings: reader.readings())
+             cores: CPULoad.sampleCores(), sensors: reader.readings(),
+             memory: MemoryStats.sampleMemory(), swap: MemoryStats.sampleSwap())
         }.value
 
-        // This poll's own figure for the history. cpuPercent keeps the last
-        // good one when a sample fails, which suits the menu but would put a
-        // reading into the graph that was never taken.
+        var current = readings
+        // This poll's own figure for the history. The CPU figure in readings
+        // keeps the last good one when a sample fails, which suits the menu
+        // but would put a reading into the graph that was never taken.
         var polledCPUPercent: Double?
         if let ticks = sample.ticks {
             // The first sample has nothing to subtract from, so the percentage
             // appears one poll later rather than reading 0% at launch.
             if let previous = previousCPUTicks {
-                cpuPercent = CPULoad.percentage(from: previous, to: ticks)
-                polledCPUPercent = cpuPercent
+                current.cpuPercent = CPULoad.percentage(from: previous, to: ticks)
+                polledCPUPercent = current.cpuPercent
             }
             previousCPUTicks = ticks
         }
@@ -231,8 +235,13 @@ final class ProcessMonitor: ObservableObject {
             }
             previousCoreTicks = cores
         }
-        temperatureCelsius = TemperatureSelection.representative(from: sample.readings)
-        history.append(cpuPercent: polledCPUPercent, temperatureCelsius: temperatureCelsius)
+        current.temperatureCelsius = TemperatureSelection.representative(from: sample.sensors)
+        current.memory = sample.memory
+        current.swap = sample.swap
+        readings = current
+        var polled = current
+        polled.cpuPercent = polledCPUPercent
+        history.append(polled)
 
         _ = peggedCPU.update(cpuPercent: polledCPUPercent, interval: elapsed)
         updateStrain()
@@ -280,15 +289,17 @@ final class ProcessMonitor: ObservableObject {
         do {
             // One sample feeds every view. Sampling again would add another
             // one-second measurement window to every poll.
-            let result = try await Task.detached { [detector, chromeInspector] in
+            let result = try await Task.detached { [detector, chromeInspector, agentInspector] in
                 let all = try detector.sample()
                 return (
                     runaways: all.filter(\.isRunaway),
                     top: TopProcesses.select(from: all),
-                    chrome: chromeInspector.instances(from: all)
+                    chrome: chromeInspector.instances(from: all),
+                    agents: agentInspector.instances(from: all)
                 )
             }.value
             chromeInstances = result.chrome
+            agentInstances = result.agents
             topProcesses = result.top
             let sampled = result.runaways
             let currentPIDs = Set(sampled.map { $0.process.identity.pid })
