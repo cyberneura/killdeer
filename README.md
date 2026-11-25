@@ -50,9 +50,12 @@ Below the parameters the menu carries a **Top Processes** list of the busiest pr
 swift build -c release          # bare executables in .build/release
 scripts/make-app.sh             # dist/Killdeer.app, universal, unsigned
 scripts/make-dmg.sh             # dist/Killdeer_<version>_universal.dmg
+scripts/local-deploy.sh         # signed and notarized, into /Applications
 ```
 
-`make-app.sh` is what produces a fully working app: `SMAppService` and notifications both need a real bundle, and `swift run killdeer-app` only approximates one. `LSUIElement` is the part that does survive a bare executable, through the `Info.plist` linked into it (see `Package.swift`). Both scripts take `--sign "Developer ID Application: ..."`; the release workflow passes it, and a local build has no certificate to pass.
+`make-app.sh` is what produces a fully working app: `SMAppService` and notifications both need a real bundle, and `swift run killdeer-app` only approximates one. `LSUIElement` is the part that does survive a bare executable, through the `Info.plist` linked into it (see `Package.swift`). `make-app.sh` and `make-dmg.sh` take `--sign "Developer ID Application: ..."`; the release workflow passes it.
+
+`local-deploy.sh` is for running this checkout as the everyday app on a Mac that holds the Developer ID certificate and a `notarytool` keychain profile: it builds with `make-app.sh --sign`, notarizes and staples the app, and puts it in `/Applications` in place of the copy there (`DEST_DIR` chooses another directory). The previous copy is moved aside and the new one renamed into its place; if that cannot be done, the previous copy is moved back. A running Killdeer is not stopped; quit it and open it again. If that copy came from Homebrew, Homebrew still records the version it installed, and its next upgrade replaces the local build.
 
 `scripts/make-icon.sh` re-renders `packaging/AppIcon.png` from `packaging/AppIcon.svg` and needs `librsvg`. Run it when the icon changes, then run `scripts/generate-macos-icons.sh` (macOS with Xcode) to rebuild `packaging/icons/`, and commit the results. See `resources/app-icons/README.md`.
 

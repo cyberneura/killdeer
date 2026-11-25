@@ -8,8 +8,9 @@
 #   scripts/make-app.sh                        # unsigned; for local use
 #   scripts/make-app.sh --sign "Developer ID Application: ..."
 #
-# Signing is what a release needs and what a local build has no way to do, so it
-# is a flag rather than a step of its own. Nothing here talks to the network.
+# Signing takes a certificate, which the release workflow and local-deploy.sh
+# have and an ordinary local build does not, so it is a flag rather than a step
+# of its own. Nothing here talks to the network.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
