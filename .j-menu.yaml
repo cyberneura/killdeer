@@ -15,6 +15,15 @@ menu:
       Killdeer first, or Launch Services may bring that one forward instead.
     shell: scripts/make-app.sh && open dist/Killdeer.app
 
+  - title: Local deploy (/Applications)
+    help: >-
+      scripts/local-deploy.sh. Builds, signs, notarizes and staples the app,
+      then puts it in /Applications in place of the one there. A running
+      Killdeer is left alone: quit it and open it again. Homebrew still
+      records the version it installed, and its next upgrade replaces this
+      build.
+    shell: scripts/local-deploy.sh
+
   - title: Quit every running Killdeer
     help: Both the installed app and a development build; they share the process name.
     shell: pkill -x killdeer-app || echo "Killdeer is not running."

@@ -17,6 +17,7 @@ swift build
 swift test
 swift run killdeer-app --interval 2   # debug run; Ctrl-C to quit
 scripts/make-app.sh                   # dist/Killdeer.app (universal, unsigned)
+scripts/local-deploy.sh               # signed and notarized build into /Applications
 ```
 
 ## Things the code does not tell you
