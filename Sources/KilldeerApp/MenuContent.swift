@@ -14,7 +14,8 @@ import KilldeerCore
 final class MenuContent: ObservableObject {
     struct Snapshot {
         var statusText = ""
-        var systemText = ""
+        /// One line per parameter, in the user's order.
+        var parameterLines: [String] = []
         var strainText: String?
         var isScanning = false
         var isWorking = false
@@ -22,6 +23,7 @@ final class MenuContent: ObservableObject {
         var selected: Set<ProcessIdentity> = []
         var topProcesses: [ProcessFinding] = []
         var chromeInstances: [ChromeInstance] = []
+        var agentInstances: [AgentInstance] = []
     }
 
     @Published private(set) var snapshot = Snapshot()
@@ -45,7 +47,7 @@ final class MenuContent: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &subscriptions)
-        // The system line is worded for the style.
+        // The parameter lines follow the order and name the style's parts.
         settings.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refresh() }
@@ -66,14 +68,19 @@ final class MenuContent: ObservableObject {
         guard openMenus == 0 else { return }
         snapshot = Snapshot(
             statusText: monitor.statusText,
-            systemText: monitor.systemText(style: settings.style),
+            parameterLines: ParameterLine.lines(
+                order: settings.drawableOrder(temperatureAvailable: monitor.temperatureAvailable),
+                slots: settings.slots(for: settings.style, temperatureAvailable: monitor.temperatureAvailable),
+                readings: monitor.readings
+            ),
             strainText: monitor.strain.menuText,
             isScanning: monitor.isScanning,
             isWorking: monitor.isWorking,
             findings: monitor.findings,
             selected: monitor.selected,
             topProcesses: monitor.topProcesses,
-            chromeInstances: monitor.chromeInstances
+            chromeInstances: monitor.chromeInstances,
+            agentInstances: monitor.agentInstances
         )
     }
 }

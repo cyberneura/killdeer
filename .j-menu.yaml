@@ -33,6 +33,8 @@ menu:
         shell: swift run killdeer top
       - title: chrome
         shell: swift run killdeer chrome
+      - title: agents
+        shell: swift run killdeer agents
       - title: clean-chrome
         shell: swift run killdeer clean-chrome
 

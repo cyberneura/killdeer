@@ -20,9 +20,27 @@ Open Killdeer from Spotlight or Launchpad. It has no Dock icon; the item in the 
 
 The item also turns red when the whole machine is in trouble rather than one process: when the CPU has stayed at 95% or more for thirty seconds, and when macOS reports a thermal state of serious or critical, which is where it starts holding performance back to shed heat. The menu then carries a line saying which (`⚠ CPU stuck at full load`, `⚠ Thermal throttling`), and a notification is posted once when either begins. The CPU warning clears when the load falls below 85%.
 
-**Menu Bar Style**, in the menu and in **Settings…**, swaps that picture for another way of showing the same load: a ring gauge of two concentric rings that fill clockwise from seven o'clock round to five, like a speedometer, the CPU use outside and the temperature inside; the bird on its own, beating its wing faster the busier the machine is and sitting still when it is idle; one upright bar per core, so a single core pegged by one process stands out from an evenly busy machine; a heatmap of one tile per core, darker the busier, with a thin temperature meter at its right-hand edge; the moon, new when idle and full at full load; the weather, from sun through cloud and rain to thunder; a coffee cup that fills with the load and spills over at full load, and steams more the hotter the chip is; or a history graph of the last thirty readings (five minutes at the default interval), newest at the right, in two rows: the CPU use on top and the temperature below. With this style the menu's system line reads `CPU 12% (↑)    46℃ (↓)`, to say which row is which. The graph keeps its history whatever style is chosen, so switching to it shows the minutes already gone; a reading that was not taken leaves a gap, and the temperature row stays empty on a Mac with no readable sensor. Temperatures are drawn on a scale from 30 to 100 °C; without a readable sensor that part stays empty, and the cup steams with the load instead. Every other style is drawn from the same reading, quantised to ten steps, and every one turns red for a runaway. The two per-core styles average neighbouring cores in groups on a machine with more than sixteen, so the item never runs to half the menu bar. The choice is kept across launches.
+Killdeer reads four figures, the **parameters**: the CPU use, the chip temperature, the memory in use, and the swap in use. Memory is what Activity Monitor calls Memory Used (app memory, wired and compressed, without the file cache) as a share of the installed RAM. Swap is drawn against the size of the RAM rather than against the swap files' current size: macOS grows those files as they fill, so a share of their size sits near the top whenever there is any swap and drops just as things get worse. A menu bar picture has room for one or two of the four, or for up to four in the history graph, so **Settings…** holds an order for them, and each style shows as many as it has places for, starting from the top. The order starts as CPU, temperature, memory, swap. The menu always lists them all, in that order, and names the part of the picture each one is drawn in, as in `CPU 12.3% — outer ring`.
 
-The menu carries the system's CPU use and a temperature, a **Top Processes** list of the busiest processes of any kind (runaway or not, Chrome or not; up to five, those under 1% left out) with a kill behind a second press on each, the scan and cleanup actions, a **Chrome Instances** submenu holding the same per-instance summary the `chrome` command prints with a kill behind a second press, and a way into Activity Monitor when you want more than Killdeer shows. The temperature is the hottest of the SoC die sensors, or, on a machine that exposes none, the hottest sensor it does offer — which may be the SSD or the battery rather than the chip. It comes from the HID sensors macOS publishes without any special permission; that is not a public interface, so hardware offering nothing readable drops the temperature and leaves the CPU figure in place.
+**Menu Bar Style**, in the menu and in **Settings…**, swaps the picture for another:
+
+| Style | Shows |
+|---|---|
+| Bird and gauge | The first parameter, as a gauge that fills from the bottom |
+| Ring gauge | The first parameter on the outer ring and the second on the inner one; both fill clockwise from seven o'clock round to five, like a speedometer |
+| Flapping bird | The first parameter, as how fast the bird beats its wing; it sits still at zero |
+| Core bars | One upright bar per core, so a single core pegged by one process stands out from an evenly busy machine. Always the CPU |
+| Core heatmap | One tile per core, darker the busier, and a thin meter at the right-hand edge for the first parameter that is not the CPU |
+| Moon phase | The first parameter: a new moon at the bottom of the scale, full at the top |
+| Weather | The first parameter, from sun through cloud and rain to thunder |
+| Coffee cup | The first parameter fills the cup, which spills over at the top of the scale; the second sets how much it steams |
+| History graph | The last thirty readings (five minutes at the default interval) of the first two, three or four parameters, newest at the right, one row each; the row count is in **Settings…** and starts at four |
+
+The two per-core styles are pictures of the cores, which only the CPU has, so the order does not change what their bars and tiles show. The history graph keeps its readings whatever style is chosen, so switching to it shows the minutes already gone; a reading that was not taken leaves a gap. With two rows a row has seven steps; with three or four it has ten or eight, in half points, which a display with one pixel to the point shows a little soft. Temperatures are drawn on a scale from 30 to 100 °C. On a Mac with no readable sensor the temperature is passed over: the next parameter in the order takes its place in the picture, and the menu has no line for it. Apart from the cores and the history, every figure is quantised to ten steps, and every style turns red for a runaway. The two per-core styles average neighbouring cores in groups on a machine with more than sixteen, so the item never runs to half the menu bar. The style, the order and the row count are kept across launches.
+
+Putting memory first makes for a quiet picture: macOS keeps memory 60 to 85% full on a healthy Mac, so the weather stays at rain and the bird never rests.
+
+Below the parameters the menu carries a **Top Processes** list of the busiest processes of any kind (runaway or not, Chrome or not; up to five, those under 1% left out) with a kill behind a second press on each, the scan and cleanup actions, a **Chrome Instances** submenu holding the same per-instance summary the `chrome` command prints with a kill behind a second press, an **AI Agents** submenu with a row per running Claude Code or Codex session (described under `agents` below), and a way into Activity Monitor when you want more than Killdeer shows. The temperature is the hottest of the SoC die sensors, or, on a machine that exposes none, the hottest sensor it does offer — which may be the SSD or the battery rather than the chip. It comes from the HID sensors macOS publishes without any special permission; that is not a public interface, so hardware offering nothing readable drops the temperature and leaves the other figures in place.
 
 **Start at Login** in that menu registers the app with macOS through `SMAppService`. The registration belongs to the system rather than to Killdeer, so it can also be revoked in System Settings > General > Login Items; the menu reads the state back from macOS and follows it.
 
@@ -83,6 +101,12 @@ killdeer chrome --json
 
 # Take down the instance a PID belongs to
 killdeer chrome kill 43420
+
+# List running Claude Code and Codex sessions, with what each has started
+killdeer agents
+
+# Add a row per process
+killdeer agents --all
 ```
 
 `chrome` answers "which browser is my automation actually driving". For each
@@ -125,6 +149,33 @@ going by the parent alone would show a stray helper beside every healthy
 browser. One handler serves a whole installation, so when several browsers are
 running out of the same one it is reported under none of them rather than under
 a guess.
+
+`agents` answers "which of my agent sessions is the machine working for". Every
+Claude Code or Codex process that was not started by another agent is a
+session, and everything under it is counted with it: MCP servers, the shell
+commands it runs, a build, a browser it launched, and an agent it started in
+turn (`codex exec` from a Claude Code session is part of that session). For
+each one it reports the directory the agent works in, which is the project the
+session is about (for Codex, the one given with `-C` when there is one), the
+app it was started from (the terminal or editor, not the
+shell in between), whether it is headless or a server, and the CPU and memory
+of the whole group. The menu's **AI Agents** submenu holds a line per session
+such as `Claude Code — killdeer — 3 processes — 25.3% CPU — 412 MB`, and under
+it the processes, busiest first, each with a kill behind a second press.
+
+An agent is identified by the file the kernel recorded as executed: `claude`,
+`codex`, or node or bun running either package's script. The process name is
+no use for this, because Claude Code's installer links `claude` to a file
+named after its version and the process is reported under that name. That
+same file is also Claude Code's search tools, started under another name
+(`ugrep`, `rg`, `bfs`); those are listed as processes of the session under
+that name. The desktop apps are not listed as sessions; a session one of them
+runs is.
+
+A process that has detached from its session, by double-forking onto launchd,
+has no parent link back to it and is counted with none. Like the rest of
+Killdeer, the list holds what the current user may read, which leaves out
+other users' sessions.
 
 Termination is deliberately two-stage: `SIGTERM`, a three-second grace period, then `SIGKILL` if the process remains alive. Killdeer checks the process start time before each signal stage so a recycled PID is never targeted.
 

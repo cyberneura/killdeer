@@ -21,10 +21,6 @@ final class MeterStyleTests: XCTestCase {
     func testOnlyTheHistoryGraphIsDrawnFromHistory() {
         XCTAssertEqual(MeterStyle.allCases.filter(\.usesHistory), [.historyGraph])
     }
-
-    func testTheStylesThatShowTheTemperature() {
-        XCTAssertEqual(MeterStyle.allCases.filter(\.usesTemperature), [.ringGauge, .coreHeatmap, .coffeeCup])
-    }
 }
 
 final class TemperatureMeterTests: XCTestCase {
@@ -42,23 +38,6 @@ final class TemperatureMeterTests: XCTestCase {
     }
 }
 
-final class SystemLineTests: XCTestCase {
-    func testTheHistoryGraphMarksWhichRowIsWhich() {
-        XCTAssertEqual(SystemLine.text(cpuPercent: 12.4, temperatureCelsius: 45.6, style: .historyGraph),
-                       "CPU 12% (↑)    46℃ (↓)")
-    }
-
-    func testOtherStylesKeepOneDecimal() {
-        XCTAssertEqual(SystemLine.text(cpuPercent: 12.4, temperatureCelsius: 45.6, style: .ringGauge),
-                       "CPU 12.4%    45.6 °C")
-    }
-
-    func testMissingReadingsAreLeftOut() {
-        XCTAssertEqual(SystemLine.text(cpuPercent: 3, temperatureCelsius: nil, style: .historyGraph), "CPU 3% (↑)")
-        XCTAssertEqual(SystemLine.text(cpuPercent: nil, temperatureCelsius: nil, style: .weather), "")
-    }
-}
-
 final class LoadHistoryTests: XCTestCase {
     func testKeepsOnlyTheNewestReadings() {
         // Arrange
@@ -66,15 +45,14 @@ final class LoadHistoryTests: XCTestCase {
 
         // Act
         for index in 0..<(LoadHistory.capacity + 5) {
-            history.append(cpuPercent: Double(index), temperatureCelsius: Double(index) + 40)
+            history.append(SystemReadings(cpuPercent: Double(index), temperatureCelsius: Double(index) + 40))
         }
 
         // Assert
-        XCTAssertEqual(history.cpuPercents.count, LoadHistory.capacity)
-        XCTAssertEqual(history.temperatures.count, LoadHistory.capacity)
-        XCTAssertEqual(history.cpuPercents.first, 5)
-        XCTAssertEqual(history.cpuPercents.last, Double(LoadHistory.capacity + 4))
-        XCTAssertEqual(history.temperatures.last, Double(LoadHistory.capacity + 44))
+        XCTAssertEqual(history.readings.count, LoadHistory.capacity)
+        XCTAssertEqual(history.readings.first?.cpuPercent, 5)
+        XCTAssertEqual(history.readings.last?.cpuPercent, Double(LoadHistory.capacity + 4))
+        XCTAssertEqual(history.readings.last?.temperatureCelsius, Double(LoadHistory.capacity + 44))
     }
 
     func testKeepsMissingReadingsInPlace() {
@@ -82,12 +60,12 @@ final class LoadHistoryTests: XCTestCase {
         var history = LoadHistory()
 
         // Act
-        history.append(cpuPercent: nil, temperatureCelsius: 50)
-        history.append(cpuPercent: 20, temperatureCelsius: nil)
+        history.append(SystemReadings(cpuPercent: nil, temperatureCelsius: 50))
+        history.append(SystemReadings(cpuPercent: 20, temperatureCelsius: nil))
 
         // Assert
-        XCTAssertEqual(history.cpuPercents, [nil, 20])
-        XCTAssertEqual(history.temperatures, [50, nil])
+        XCTAssertEqual(history.readings.map(\.cpuPercent), [nil, 20])
+        XCTAssertEqual(history.readings.map(\.temperatureCelsius), [50, nil])
     }
 }
 
@@ -95,11 +73,11 @@ final class HistoryGraphTests: XCTestCase {
     func testPadsAtTheFrontSoTheNewestIsAtTheRight() {
         // Arrange
         var history = LoadHistory()
-        history.append(cpuPercent: 50, temperatureCelsius: 65)
+        history.append(SystemReadings(cpuPercent: 50, temperatureCelsius: 65))
 
         // Act
-        let cpu = HistoryGraph.cpuLevels(history)
-        let temperature = HistoryGraph.temperatureLevels(history)
+        let cpu = HistoryGraph.levels(history, parameter: .cpu, rows: 2)
+        let temperature = HistoryGraph.levels(history, parameter: .temperature, rows: 2)
 
         // Assert
         XCTAssertEqual(cpu.count, LoadHistory.capacity)
@@ -110,23 +88,69 @@ final class HistoryGraphTests: XCTestCase {
     }
 
     func testAnEmptyHistoryIsAllGaps() {
-        XCTAssertEqual(HistoryGraph.cpuLevels(LoadHistory()), Array(repeating: nil, count: LoadHistory.capacity))
+        XCTAssertEqual(HistoryGraph.levels(LoadHistory(), parameter: .cpu, rows: 2),
+                       Array(repeating: nil, count: LoadHistory.capacity))
     }
 
-    func testCPUScaleMatchesTheMeter() {
-        XCTAssertEqual(HistoryGraph.cpuLevel(forPercent: 0), 0)
-        XCTAssertEqual(HistoryGraph.cpuLevel(forPercent: 1), 1)
-        XCTAssertEqual(HistoryGraph.cpuLevel(forPercent: 100), HistoryGraph.steps)
-        XCTAssertEqual(HistoryGraph.cpuLevel(forPercent: 800), HistoryGraph.steps)
-        XCTAssertEqual(HistoryGraph.cpuLevel(forPercent: .nan), 0)
+    func testAMissingReadingIsAGapNotTheFloor() {
+        // Arrange
+        var history = LoadHistory()
+        history.append(SystemReadings(cpuPercent: nil, temperatureCelsius: .nan))
+        history.append(SystemReadings(cpuPercent: 0, temperatureCelsius: 20))
+
+        // Act
+        let cpu = HistoryGraph.levels(history, parameter: .cpu, rows: 2).suffix(2)
+        let temperature = HistoryGraph.levels(history, parameter: .temperature, rows: 2).suffix(2)
+
+        // Assert
+        XCTAssertEqual(Array(cpu), [nil, 0])
+        XCTAssertEqual(Array(temperature), [nil, 0])
     }
 
-    func testTemperatureIsHeldToTheRange() {
-        XCTAssertEqual(HistoryGraph.temperatureLevel(forCelsius: 30), 0)
-        XCTAssertEqual(HistoryGraph.temperatureLevel(forCelsius: 10), 0)
-        XCTAssertEqual(HistoryGraph.temperatureLevel(forCelsius: 100), HistoryGraph.steps)
-        XCTAssertEqual(HistoryGraph.temperatureLevel(forCelsius: 120), HistoryGraph.steps)
-        XCTAssertNil(HistoryGraph.temperatureLevel(forCelsius: .nan))
+    func testEveryRowCountFitsTheMenuBarHeight() {
+        for rows in HistoryGraph.rowChoices {
+            let gaps = Double(rows - 1) * HistoryGraph.rowGap(rows: rows)
+            XCTAssertLessThanOrEqual(Double(rows * HistoryGraph.rowHeight(rows: rows)) + gaps, 18, "\(rows) rows")
+            XCTAssertGreaterThan(HistoryGraph.rowGap(rows: rows), 0, "\(rows) rows")
+        }
+    }
+
+    func testTwoRowsStepInPointsAndMoreRowsInHalfPoints() {
+        XCTAssertEqual(HistoryGraph.steps(rows: 2), 7)
+        XCTAssertEqual(HistoryGraph.steps(rows: 3), 10)
+        XCTAssertEqual(HistoryGraph.steps(rows: 4), 8)
+    }
+
+    func testTheScaleFollowsTheRowCount() {
+        // Arrange
+        var history = LoadHistory()
+        history.append(SystemReadings(
+            cpuPercent: 100,
+            memory: MemoryUsage(usedBytes: 50, totalBytes: 100),
+            swap: SwapUsage(usedBytes: 1, allocatedBytes: 10, physicalMemoryBytes: 1_000)
+        ))
+
+        // Act / Assert
+        for rows in HistoryGraph.rowChoices {
+            let steps = HistoryGraph.steps(rows: rows)
+            XCTAssertEqual(HistoryGraph.levels(history, parameter: .cpu, rows: rows).last, steps, "\(rows) rows")
+            XCTAssertEqual(HistoryGraph.levels(history, parameter: .memory, rows: rows).last,
+                           Int((Double(steps) / 2).rounded()), "\(rows) rows")
+            // Anything above zero stands one step, on every scale.
+            XCTAssertEqual(HistoryGraph.levels(history, parameter: .swap, rows: rows).last, 1, "\(rows) rows")
+        }
+    }
+
+    func testRowCountsOutsideTheChoicesAreHeld() {
+        XCTAssertEqual(HistoryGraph.clampedRows(0), 2)
+        XCTAssertEqual(HistoryGraph.clampedRows(3), 3)
+        XCTAssertEqual(HistoryGraph.clampedRows(99), 4)
+    }
+
+    func testRowNamesRunFromTopToBottom() {
+        XCTAssertEqual(HistoryGraph.rowNames(count: 2), ["top row", "bottom row"])
+        XCTAssertEqual(HistoryGraph.rowNames(count: 3), ["top row", "middle row", "bottom row"])
+        XCTAssertEqual(HistoryGraph.rowNames(count: 4), ["top row", "row 2", "row 3", "bottom row"])
     }
 }
 
@@ -189,11 +213,11 @@ final class CoffeeCupTests: XCTestCase {
         XCTAssertEqual(CoffeeCup.fill(forLevel: 5), 0.5)
     }
 
-    func testTheSteamFollowsTheTemperatureWhenThereIsOne() {
-        XCTAssertEqual(CoffeeCup.forLevel(CPUMeter.steps, temperatureLevel: 0).steamLines, 0)
-        XCTAssertEqual(CoffeeCup.forLevel(0, temperatureLevel: 8).steamLines, 3)
-        XCTAssertTrue(CoffeeCup.forLevel(CPUMeter.steps, temperatureLevel: 0).overflowing)
-        XCTAssertEqual(CoffeeCup.forLevel(5, temperatureLevel: nil).steamLines, 2)
+    func testTheSteamFollowsItsOwnLevelWhenThereIsOne() {
+        XCTAssertEqual(CoffeeCup.forLevel(CPUMeter.steps, steamLevel: 0).steamLines, 0)
+        XCTAssertEqual(CoffeeCup.forLevel(0, steamLevel: 8).steamLines, 3)
+        XCTAssertTrue(CoffeeCup.forLevel(CPUMeter.steps, steamLevel: 0).overflowing)
+        XCTAssertEqual(CoffeeCup.forLevel(5, steamLevel: nil).steamLines, 2)
     }
 
     func testOnlyFullLoadSpillsOver() {

@@ -10,6 +10,7 @@ private func usage() {
       killdeer clean-chrome [--yes] [--cpu PERCENT] [--interval SECONDS]
       killdeer chrome [--all] [--json] [--probe] [--interval SECONDS]
       killdeer chrome kill PID [--yes]
+      killdeer agents [--all] [--interval SECONDS]
       killdeer --license
 
     scan          Show runaway findings (or every sampled process with --all).
@@ -21,6 +22,10 @@ private func usage() {
                   headless state, debugging port and who launched them.
                   --all adds a line per helper, --probe checks the debugging
                   port answers, and `chrome kill PID` takes down one instance.
+    agents        List running Claude Code and Codex sessions: the directory
+                  each works in, who launched it, and the CPU and memory of
+                  the session with everything it started. --all adds a line
+                  per process.
     --license     Print Killdeer's license and the third-party notices.
     """)
 }
@@ -136,6 +141,37 @@ private func renderChrome(_ instances: [ChromeInstance], showHelpers: Bool, prob
     }
 }
 
+private func renderAgents(_ instances: [AgentInstance], showProcesses: Bool) {
+    if instances.isEmpty {
+        print("No Claude Code or Codex sessions are running.")
+        return
+    }
+    let now = Date()
+
+    for (index, instance) in instances.enumerated() {
+        if index > 0 { print("") }
+        print("\(instance.kind.displayName)  PID \(instance.root.identity.pid)")
+        print("  directory      \(instance.workingDirectory ?? "unknown")")
+        if !instance.tags.isEmpty {
+            print("  mode           \(instance.tags.joined(separator: ", "))")
+        }
+        if let launchedBy = instance.launchedBy {
+            print("  launched by    \(launchedBy)")
+        }
+        print("  started        \(ChromeFormatting.absoluteTime(instance.startTime)) (\(ChromeFormatting.relativeTime(instance.startTime, now: now)))")
+        print(String(format: "  processes      %d, %.1f%% CPU, %@",
+                     instance.allProcesses.count,
+                     instance.totalCPUPercent,
+                     ChromeFormatting.memory(instance.totalResidentMemoryBytes)))
+
+        guard showProcesses else { continue }
+        for process in instance.allProcesses {
+            let cpu = String(format: "%.1f%%", process.cpuPercent)
+            print("    \(column(String(process.identity.pid), width: 7)) \(column(process.displayName, width: 34)) \(column(cpu, width: 7)) \(ChromeFormatting.memory(process.residentMemoryBytes))")
+        }
+    }
+}
+
 private func chromeJSON(_ instances: [ChromeInstance], probe: Bool) throws -> String {
     let prober = ChromeDebugProbe()
     var probes: [ChromeListener: ChromeDebugTarget?] = [:]
@@ -229,6 +265,9 @@ do {
         } else {
             renderChrome(instances, showHelpers: arguments.contains("--all"), probe: arguments.contains("--probe"))
         }
+    case "agents":
+        let instances = try AgentInspector().sample(configuration: configuration(arguments))
+        renderAgents(instances, showProcesses: arguments.contains("--all"))
     case "--license":
         // Killdeer's own MIT text first, then the notices for what it bundles.
         print(Licenses.license)

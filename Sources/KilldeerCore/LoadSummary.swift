@@ -20,8 +20,11 @@ public enum CPUMeter {
     /// Anything above zero shows at least one step. A machine at 4% is not
     /// idle in the sense of "nothing is running", and an empty meter beside a
     /// non-zero figure in the menu would read as the meter being broken.
-    public static func level(forPercent percent: Double?) -> Int {
-        guard let percent, percent.isFinite, percent > 0 else { return 0 }
+    ///
+    /// Memory and swap are read on the same scale, and the history graph
+    /// passes its own `steps`.
+    public static func level(forPercent percent: Double?, steps: Int = steps) -> Int {
+        guard let percent, percent.isFinite, percent > 0, steps > 0 else { return 0 }
         let clamped = min(percent, 100)
         let filled = Int((clamped / 100 * Double(steps)).rounded())
         return min(steps, max(1, filled))
