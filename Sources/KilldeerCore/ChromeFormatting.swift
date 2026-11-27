@@ -72,3 +72,11 @@ extension ChromeInstance {
         return parts.joined(separator: " — ")
     }
 }
+
+extension ClaudeInChromeDevice {
+    /// The whole ID, so it can be matched by eye against the one Claude Code
+    /// prints, and the profile it belongs to.
+    public var menuText: String {
+        "\(deviceID) — \(profileName ?? profileDirectory)"
+    }
+}
