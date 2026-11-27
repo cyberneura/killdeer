@@ -58,6 +58,10 @@ public struct ChromeInstance: Sendable {
     /// The process that launched the browser, when it is something other than
     /// the window server: a terminal, chromedriver, node, python.
     public let launchedBy: String?
+    /// One per profile of this user-data-dir that has the extension's ID,
+    /// whether or not that profile has a window open: nothing on disk says
+    /// which profiles the running browser has loaded.
+    public let claudeInChromeDevices: [ClaudeInChromeDevice]
 
     /// Stable across polls so SwiftUI keeps a submenu open while the list
     /// behind it is refreshed. The browser's PID identifies a running instance;
@@ -73,7 +77,8 @@ public struct ChromeInstance: Sendable {
             userDataDirectory: userDataDirectory, profileDirectory: profileDirectory, profile: profile,
             isHeadless: isHeadless, remoteDebugging: remoteDebugging, remoteDebuggingPort: remoteDebuggingPort,
             sharesDebugPort: true, debugListener: debugListener,
-            automationFlags: automationFlags, launchedBy: launchedBy
+            automationFlags: automationFlags, launchedBy: launchedBy,
+            claudeInChromeDevices: claudeInChromeDevices
         )
     }
     public var allProcesses: [ChromeProcess] { (browser.map { [$0] } ?? []) + helpers }
@@ -98,15 +103,18 @@ public struct ChromeInstance: Sendable {
 
 public struct ChromeInspector: Sendable {
     private let catalog: ChromeProfileCatalog
+    private let claudeInChrome: ClaudeInChromeCatalog
     private let fileContents: @Sendable (String) -> String?
     private let listeners: @Sendable (pid_t) -> Set<ChromeListener>
 
     public init(
         catalog: ChromeProfileCatalog = .init(),
+        claudeInChrome: ClaudeInChromeCatalog = .init(),
         listeners: @escaping @Sendable (pid_t) -> Set<ChromeListener> = { ListeningSockets()(pid: $0) },
         fileContents: @escaping @Sendable (String) -> String? = { try? String(contentsOfFile: $0, encoding: .utf8) }
     ) {
         self.catalog = catalog
+        self.claudeInChrome = claudeInChrome
         self.listeners = listeners
         self.fileContents = fileContents
     }
@@ -217,7 +225,8 @@ public struct ChromeInspector: Sendable {
                 sharesDebugPort: false,
                 debugListener: nil,
                 automationFlags: [],
-                launchedBy: nil
+                launchedBy: nil,
+                claudeInChromeDevices: []
             )
         }
 
@@ -320,7 +329,11 @@ public struct ChromeInspector: Sendable {
             sharesDebugPort: false,
             debugListener: port.flatMap { Self.listener(for: $0, among: listeners(browser.identity.pid)) },
             automationFlags: commandLine.automationFlags,
-            launchedBy: Self.launcher(of: browser, byPID: byPID)
+            launchedBy: Self.launcher(of: browser, byPID: byPID),
+            claudeInChromeDevices: claudeInChrome.devices(inUserDataDirectory: Self.readableDirectory(userDataDirectory))
+                .map { $0.named(by: localState?.profiles) }
+                // The profile this instance opened first, the rest after it.
+                .sorted { ($0.profileDirectory == profileDirectory ? 0 : 1) < ($1.profileDirectory == profileDirectory ? 0 : 1) }
         )
     }
 

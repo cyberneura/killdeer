@@ -125,6 +125,9 @@ private func renderChrome(_ instances: [ChromeInstance], showHelpers: Bool, prob
         if let launchedBy = instance.launchedBy {
             print("  launched by    \(launchedBy)")
         }
+        for device in instance.claudeInChromeDevices {
+            print("  claude ID      \(device.menuText)")
+        }
         if let started = instance.startTime {
             print("  started        \(ChromeFormatting.absoluteTime(started)) (\(ChromeFormatting.relativeTime(started, now: now)))")
         }

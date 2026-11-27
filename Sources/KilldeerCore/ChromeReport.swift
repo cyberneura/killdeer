@@ -17,6 +17,19 @@ public struct ChromeReport: Codable, Sendable {
         public let commandLine: [String]
     }
 
+    public struct ClaudeInChromeDevice: Codable, Sendable {
+        public let profileDirectory: String
+        public let profileName: String?
+        public let deviceId: String
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(profileDirectory, forKey: .profileDirectory)
+            try container.encodeAlways(profileName, forKey: .profileName)
+            try container.encode(deviceId, forKey: .deviceId)
+        }
+    }
+
     public struct Instance: Codable, Sendable {
         public let browser: String
         public let browserKind: String?
@@ -39,6 +52,7 @@ public struct ChromeReport: Codable, Sendable {
         public let helperCount: Int
         public let totalCpuPercent: Double
         public let totalResidentMemoryBytes: UInt64
+        public let claudeInChromeDevices: [ClaudeInChromeDevice]
         public let processes: [Process]
     }
 
@@ -51,8 +65,8 @@ public struct ChromeReport: Codable, Sendable {
 /// can then not tell "this browser has no debugging port" from "this version of
 /// Killdeer stopped reporting ports". Every optional is written as an explicit
 /// null instead.
-private extension KeyedEncodingContainer {
-    mutating func encodeAlways<T: Encodable>(_ value: T?, forKey key: Key) throws {
+extension KeyedEncodingContainer {
+    fileprivate mutating func encodeAlways<T: Encodable>(_ value: T?, forKey key: Key) throws {
         if let value {
             try encode(value, forKey: key)
         } else {
@@ -85,6 +99,7 @@ extension ChromeReport.Instance {
         try container.encode(helperCount, forKey: .helperCount)
         try container.encode(totalCpuPercent, forKey: .totalCpuPercent)
         try container.encode(totalResidentMemoryBytes, forKey: .totalResidentMemoryBytes)
+        try container.encode(claudeInChromeDevices, forKey: .claudeInChromeDevices)
         try container.encode(processes, forKey: .processes)
     }
 }
@@ -127,6 +142,9 @@ extension ChromeReport {
                 helperCount: instance.helpers.count,
                 totalCpuPercent: instance.totalCPUPercent,
                 totalResidentMemoryBytes: instance.totalResidentMemoryBytes,
+                claudeInChromeDevices: instance.claudeInChromeDevices.map {
+                    ClaudeInChromeDevice(profileDirectory: $0.profileDirectory, profileName: $0.profileName, deviceId: $0.deviceID)
+                },
                 processes: instance.allProcesses.map { process in
                     Process(
                         pid: process.identity.pid,

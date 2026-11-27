@@ -1,6 +1,12 @@
 import XCTest
 @testable import KilldeerCore
 
+/// Keeps these tests off the real disk: the default catalog would read the
+/// extension storage of whatever browsers this machine has.
+private let noDisk = ClaudeInChromeCatalog(fileSystem: .init(
+    subdirectories: { _ in [] }, files: { _ in [] }, contents: { _, _ in nil }
+))
+
 final class ChromeCommandLineTests: XCTestCase {
     func testExtractsUserDataDirProfileHeadlessAndPort() {
         let line = ChromeCommandLine(executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", arguments: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -217,14 +223,14 @@ final class ChromeProfileCatalogTests: XCTestCase {
             ),
             cpuPercent: 0, isOrphanChromeHelper: false, score: 0, reasons: []
         )
-        let inspector = ChromeInspector(catalog: ChromeProfileCatalog { _ in nil })
+        let inspector = ChromeInspector(catalog: ChromeProfileCatalog { _ in nil }, claudeInChrome: noDisk)
         let instance = inspector.instances(from: [browser]).first
         XCTAssertNil(instance?.profileDirectory)
         XCTAssertEqual(instance?.profileDescription, "profile unknown")
 
         // The mirror case: a file that read cleanly but names nothing does get
         // the Default fallback.
-        let fresh = ChromeInspector(catalog: ChromeProfileCatalog { _ in Data("{\"profile\":{}}".utf8) })
+        let fresh = ChromeInspector(catalog: ChromeProfileCatalog { _ in Data("{\"profile\":{}}".utf8) }, claudeInChrome: noDisk)
         XCTAssertEqual(fresh.instances(from: [browser]).first?.profileDirectory, "Default")
     }
 
@@ -251,7 +257,7 @@ final class ChromeInspectorTests: XCTestCase {
         let renderer = finding(pid: 101, parent: 100, name: "Google Chrome Helper (Renderer)", args: [helperPath, "--type=renderer"])
         let gpu = finding(pid: 102, parent: 100, name: "Google Chrome Helper (GPU)", args: [helperPath, "--type=gpu-process"])
 
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [browser, renderer, gpu])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [browser, renderer, gpu])
 
         XCTAssertEqual(instances.count, 1)
         let instance = try! XCTUnwrap(instances.first)
@@ -264,7 +270,7 @@ final class ChromeInspectorTests: XCTestCase {
 
     func testBrowserWithoutSwitchesFallsBackToTheDefaultProfile() {
         let browser = finding(pid: 200, parent: 1, name: "Google Chrome", args: [chromePath])
-        let instance = ChromeInspector(catalog: catalog()).instances(from: [browser]).first
+        let instance = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [browser]).first
         XCTAssertEqual(instance?.userDataDirectory, NSHomeDirectory() + "/Library/Application Support/Google/Chrome")
         XCTAssertEqual(instance?.profileDirectory, "Default")
     }
@@ -277,7 +283,7 @@ final class ChromeInspectorTests: XCTestCase {
         let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [
             crashpadPath, "--monitor-self-annotation=ptype=crashpad-handler", "--database=/tmp/agent/Crashpad"
         ])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [browser, crashpad])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [browser, crashpad])
         XCTAssertEqual(instances.count, 1)
         XCTAssertFalse(instances[0].isOrphaned)
         XCTAssertEqual(instances[0].helpers.map(\.identity.pid), [101])
@@ -292,7 +298,7 @@ final class ChromeInspectorTests: XCTestCase {
         let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [
             crashpadPath, "--database=/Users/me/Library/Application Support/Google/Chrome/Crashpad"
         ])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [browser, crashpad])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [browser, crashpad])
         XCTAssertEqual(instances.count, 1)
         XCTAssertEqual(instances[0].helpers.map(\.identity.pid), [101])
     }
@@ -305,7 +311,7 @@ final class ChromeInspectorTests: XCTestCase {
         let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [
             crashpadPath, "--database=/tmp/elsewhere/Crashpad"
         ])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [first, second, crashpad])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [first, second, crashpad])
         XCTAssertEqual(instances.count, 2)
         XCTAssertTrue(instances.allSatisfy { $0.helpers.isEmpty })
         XCTAssertFalse(instances.contains { $0.isOrphaned })
@@ -319,7 +325,7 @@ final class ChromeInspectorTests: XCTestCase {
         let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [
             crashpadPath, "--database=/tmp/b/Crashpad"
         ])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [first, second, crashpad])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [first, second, crashpad])
         XCTAssertEqual(instances.first { $0.browser?.identity.pid == 200 }?.helpers.map(\.identity.pid), [101])
         XCTAssertEqual(instances.first { $0.browser?.identity.pid == 100 }?.helpers.count, 0)
     }
@@ -329,7 +335,7 @@ final class ChromeInspectorTests: XCTestCase {
     func testCrashpadHandlerWithoutADatabaseSwitchIsStillPlaced() {
         let browser = finding(pid: 100, parent: 1, name: "Google Chrome", args: [chromePath])
         let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [crashpadPath])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [browser, crashpad])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [browser, crashpad])
         XCTAssertEqual(instances.count, 1)
         XCTAssertFalse(instances[0].isOrphaned)
         XCTAssertEqual(instances[0].helpers.map(\.identity.pid), [101])
@@ -344,7 +350,7 @@ final class ChromeInspectorTests: XCTestCase {
         let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [
             crashpadPath, "--database=/tmp/shared/Crashpad"
         ])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [first, second, crashpad])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [first, second, crashpad])
         XCTAssertEqual(instances.count, 2)
         XCTAssertTrue(instances.allSatisfy { $0.helpers.isEmpty })
         XCTAssertFalse(instances.contains { $0.isOrphaned })
@@ -354,7 +360,7 @@ final class ChromeInspectorTests: XCTestCase {
         let crashpad = finding(pid: 101, parent: 1, name: "chrome_crashpad_handler", args: [
             crashpadPath, "--database=/tmp/gone/Crashpad"
         ])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [crashpad])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [crashpad])
         XCTAssertEqual(instances.count, 1)
         XCTAssertTrue(instances[0].isOrphaned)
     }
@@ -368,7 +374,7 @@ final class ChromeInspectorTests: XCTestCase {
           "Default":{"name":"Personal","user_name":""},
           "Profile 3":{"name":"Work","user_name":"me@example.com"}}}}
         """.utf8) }
-        let instance = ChromeInspector(catalog: catalog).instances(from: [browser]).first
+        let instance = ChromeInspector(catalog: catalog, claudeInChrome: noDisk).instances(from: [browser]).first
         XCTAssertEqual(instance?.profileDirectory, "Profile 3")
         XCTAssertEqual(instance?.profileDescription, "Work <me@example.com>")
     }
@@ -379,7 +385,7 @@ final class ChromeInspectorTests: XCTestCase {
         let catalog = ChromeProfileCatalog { _ in Data("""
         {"profile":{"info_cache":{"Default":{"name":"Work","user_name":""}}}}
         """.utf8) }
-        XCTAssertEqual(ChromeInspector(catalog: catalog).instances(from: [browser]).first?.profileDirectory, "Default")
+        XCTAssertEqual(ChromeInspector(catalog: catalog, claudeInChrome: noDisk).instances(from: [browser]).first?.profileDirectory, "Default")
     }
 
     /// Chrome resolves a relative `--user-data-dir` against its own working
@@ -391,7 +397,7 @@ final class ChromeInspectorTests: XCTestCase {
                 chromePath, "--user-data-dir=\(directory)", "--remote-debugging-port=0"
             ])
             var reads: [String] = []
-            let inspector = ChromeInspector(catalog: catalog()) { path in
+            let inspector = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk) { path in
                 reads.append(path)
                 return "50618"
             }
@@ -409,7 +415,7 @@ final class ChromeInspectorTests: XCTestCase {
 
     func testHelperWithNoSurvivingBrowserIsReportedAsOrphaned() {
         let orphan = finding(pid: 300, parent: 999, name: "Google Chrome Helper (Renderer)", args: [helperPath, "--type=renderer"])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [orphan])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [orphan])
         XCTAssertEqual(instances.count, 1)
         XCTAssertTrue(instances[0].isOrphaned)
         XCTAssertNil(instances[0].userDataDirectory)
@@ -420,7 +426,7 @@ final class ChromeInspectorTests: XCTestCase {
         let first = finding(pid: 400, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/agent"])
         let second = finding(pid: 500, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/agent"])
         let helper = finding(pid: 501, parent: 500, name: "helper", args: [helperPath, "--type=renderer"])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [first, second, helper])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [first, second, helper])
         XCTAssertEqual(instances.count, 2)
         XCTAssertEqual(instances.first(where: { $0.browser?.identity.pid == 500 })?.helpers.count, 1)
         XCTAssertEqual(instances.first(where: { $0.browser?.identity.pid == 400 })?.helpers.count, 0)
@@ -432,7 +438,7 @@ final class ChromeInspectorTests: XCTestCase {
         let browser = finding(pid: 600, parent: 1, name: "Google Chrome", args: [
             chromePath, "--user-data-dir=/tmp/agent", "--remote-debugging-port=0"
         ])
-        let inspector = ChromeInspector(catalog: catalog(), listeners: { _ in [ChromeListener(port: 50618, isIPv6: false)] }) { path in
+        let inspector = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk, listeners: { _ in [ChromeListener(port: 50618, isIPv6: false)] }) { path in
             path == "/tmp/agent/DevToolsActivePort" ? "50618\n/devtools/browser/abc" : nil
         }
         let instance = inspector.instances(from: [browser]).first
@@ -445,7 +451,7 @@ final class ChromeInspectorTests: XCTestCase {
         let browser = finding(pid: 700, parent: 1, name: "Google Chrome", args: [
             chromePath, "--user-data-dir=/tmp/agent", "--remote-debugging-port=0"
         ])
-        let instance = ChromeInspector(catalog: catalog()) { _ in nil }.instances(from: [browser]).first
+        let instance = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk) { _ in nil }.instances(from: [browser]).first
         XCTAssertNil(instance?.remoteDebuggingPort)
         XCTAssertTrue(instance?.tags.contains("port unresolved") == true)
     }
@@ -454,7 +460,7 @@ final class ChromeInspectorTests: XCTestCase {
         let electron = finding(pid: 800, parent: 1, name: "chrome_crashpad_handler", args: [
             "/Applications/Orca.app/Contents/Frameworks/Electron Framework.framework/Helpers/chrome_crashpad_handler"
         ])
-        XCTAssertTrue(ChromeInspector(catalog: catalog()).instances(from: [electron]).isEmpty)
+        XCTAssertTrue(ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [electron]).isEmpty)
     }
 
     /// argv is unreadable for another user's processes, and every reported
@@ -462,13 +468,13 @@ final class ChromeInspectorTests: XCTestCase {
     /// as a row of unknowns.
     func testProcessWithUnreadableArgumentsIsSkipped() {
         let foreign = finding(pid: 850, parent: 1, name: "Google Chrome", args: [])
-        XCTAssertTrue(ChromeInspector(catalog: catalog()).instances(from: [foreign]).isEmpty)
+        XCTAssertTrue(ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [foreign]).isEmpty)
     }
 
     func testLauncherIsReportedWhenABrowserWasStartedByATool() {
         let node = finding(pid: 900, parent: 1, name: "node", args: ["/usr/local/bin/node"])
         let browser = finding(pid: 901, parent: 900, name: "Google Chrome", args: [chromePath])
-        let instance = ChromeInspector(catalog: catalog()).instances(from: [node, browser]).first
+        let instance = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [node, browser]).first
         XCTAssertEqual(instance?.launchedBy, "node")
     }
 
@@ -478,7 +484,7 @@ final class ChromeInspectorTests: XCTestCase {
     func testABrowserRelaunchingItselfIsNotReportedAsTheLauncher() {
         let parent = finding(pid: 900, parent: 1, name: "Google Chrome", args: ["the-old-chrome"], executablePath: chromePath)
         let browser = finding(pid: 901, parent: 900, name: "Google Chrome", args: [chromePath])
-        XCTAssertNil(ChromeInspector(catalog: catalog()).instances(from: [parent, browser]).first { $0.browser?.identity.pid == 901 }?.launchedBy)
+        XCTAssertNil(ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [parent, browser]).first { $0.browser?.identity.pid == 901 }?.launchedBy)
     }
 
     /// Both browsers end up listening, one per address family, so which one a
@@ -488,7 +494,7 @@ final class ChromeInspectorTests: XCTestCase {
         let first = finding(pid: 100, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"])
         let second = finding(pid: 200, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/b", "--remote-debugging-port=9222"])
         let lone = finding(pid: 300, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/c", "--remote-debugging-port=9333"])
-        let instances = ChromeInspector(catalog: catalog(), listeners: { pid in
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk, listeners: { pid in
             [ChromeListener(port: pid == 300 ? 9333 : 9222, isIPv6: false)]
         }).instances(from: [first, second, lone])
 
@@ -517,7 +523,7 @@ final class ChromeInspectorTests: XCTestCase {
             chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"
         ])
         let instance = try XCTUnwrap(
-            ChromeInspector(catalog: catalog(), listeners: { _ in [] }).instances(from: [browser]).first
+            ChromeInspector(catalog: catalog(), claudeInChrome: noDisk, listeners: { _ in [] }).instances(from: [browser]).first
         )
         XCTAssertEqual(instance.remoteDebuggingPort, 9222)
         XCTAssertFalse(instance.isListeningOnDebugPort)
@@ -538,7 +544,7 @@ final class ChromeInspectorTests: XCTestCase {
             chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"
         ])
         let instance = try XCTUnwrap(
-            ChromeInspector(catalog: catalog(), listeners: { _ in [ChromeListener(port: 9222, isIPv6: false)] }).instances(from: [browser]).first
+            ChromeInspector(catalog: catalog(), claudeInChrome: noDisk, listeners: { _ in [ChromeListener(port: 9222, isIPv6: false)] }).instances(from: [browser]).first
         )
         XCTAssertNotNil(instance.probeTarget)
         let report = ChromeReport(
@@ -554,7 +560,7 @@ final class ChromeInspectorTests: XCTestCase {
     func testOnlyBrowsersActuallyHoldingAPortContestIt() {
         let holder = finding(pid: 100, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"])
         let loser = finding(pid: 200, parent: 1, name: "Google Chrome", args: [chromePath, "--user-data-dir=/tmp/b", "--remote-debugging-port=9222"])
-        let instances = ChromeInspector(catalog: catalog(), listeners: { pid in pid == 100 ? [ChromeListener(port: 9222, isIPv6: false)] : [] })
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk, listeners: { pid in pid == 100 ? [ChromeListener(port: 9222, isIPv6: false)] : [] })
             .instances(from: [holder, loser])
         XCTAssertFalse(instances.contains { $0.sharesDebugPort })
         XCTAssertNotNil(instances.first { $0.browser?.identity.pid == 100 }?.probeTarget)
@@ -570,7 +576,7 @@ final class ChromeInspectorTests: XCTestCase {
             chromePath, "--user-data-dir=/tmp/a", "--remote-debugging-port=9222"
         ])
         let instance = try XCTUnwrap(
-            ChromeInspector(catalog: catalog(), listeners: { _ in [ChromeListener(port: 9222, isIPv6: true)] })
+            ChromeInspector(catalog: catalog(), claudeInChrome: noDisk, listeners: { _ in [ChromeListener(port: 9222, isIPv6: true)] })
                 .instances(from: [browser]).first
         )
         XCTAssertEqual(instance.probeTarget, ChromeListener(port: 9222, isIPv6: true))
@@ -589,7 +595,7 @@ final class ChromeInspectorTests: XCTestCase {
     func testJSONReportKeepsOneShapeAcrossInstances() throws {
         let browser = finding(pid: 1000, parent: 1, name: "Google Chrome", args: [chromePath, "--remote-debugging-port=9222"])
         let orphan = finding(pid: 1001, parent: 999, name: "helper", args: [helperPath, "--type=renderer"])
-        let instances = ChromeInspector(catalog: catalog()).instances(from: [browser, orphan])
+        let instances = ChromeInspector(catalog: catalog(), claudeInChrome: noDisk).instances(from: [browser, orphan])
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(ChromeReport(instances: instances))

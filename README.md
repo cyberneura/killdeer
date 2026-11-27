@@ -145,6 +145,18 @@ A browser started without `--profile-directory` is reported against the profile
 it used last, read from `Local State`. One browser process can hold several
 profiles open at once; only that one is named.
 
+Each profile with the Claude in Chrome extension is listed with the ID the
+extension gave it (`claude ID`, and `claudeInChromeDevices` in `--json`). Claude
+Code shows this ID when more than one browser is connected and it asks which
+one to use; an ID that no running instance here lists most likely belongs to
+another machine (or to a browser whose storage could not be read, or that was
+started with a relative `--user-data-dir`). In the menu, choosing an ID copies it. The ID is read from the
+extension's own storage (a LevelDB the browser keeps under
+`<profile>/Local Extension Settings/`), which is not a published interface:
+when it cannot be read, the line is left out and nothing else changes. Every
+profile with an ID is listed, whether or not it has a window open, because
+nothing on disk says which profiles the running browser has loaded.
+
 The crash handler is placed by the `--database` directory it writes to, falling
 back to the installation it was launched from. Crashpad double-forks it onto
 launchd, so its parent link says nothing about which browser it serves, and

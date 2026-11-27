@@ -149,6 +149,17 @@ private struct KilldeerMenu: View {
                         if let launchedBy = instance.launchedBy {
                             Text("Launched by \(launchedBy)")
                         }
+                        if !instance.claudeInChromeDevices.isEmpty {
+                            Divider()
+                            Text("Claude in Chrome ID (click to copy)")
+                            ForEach(instance.claudeInChromeDevices, id: \.profileDirectory) { device in
+                                Button(device.menuText) {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(device.deviceID, forType: .string)
+                                }
+                            }
+                            Divider()
+                        }
                         if instance.isOrphaned {
                             // One button per stray: the row groups helpers that
                             // have nothing to do with each other beyond having
